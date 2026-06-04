@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Konfigurácia — Laser Kalkulátor</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3250; --accent: #3b82f6; --accent-glow: rgba(59,130,246,0.15);
+    --green: #22c55e; --yellow: #f59e0b; --red: #ef4444;
+    --text: #e2e8f0; --text-muted: #64748b; --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+  h2 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; }
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg,#3b82f6,#6366f1); display:flex;align-items:center;justify-content:center;font-size:1.2rem; }
+  .subtitle { color: var(--text-muted); font-size: .85rem; margin-top: 2px; }
+  .back-link { color: var(--accent); text-decoration: none; font-size: .88rem; margin-left: auto; }
+  .back-link:hover { text-decoration: underline; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1100px; margin: 0 auto; }
+  @media(max-width:720px){ .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 0; }
+  .full-width { grid-column: 1 / -1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th { color: var(--text-muted); font-weight: 600; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 4px 8px; }
+  td:first-child { color: var(--text-muted); width: 80px; }
+
+  input[type=number] {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 5px 8px; font-size: .88rem; width: 90px; outline: none;
+    transition: border-color .2s;
+  }
+  input[type=number]:focus { border-color: var(--accent); }
+
+  .btn-save {
+    background: var(--accent); color: white; border: none; border-radius: 10px;
+    padding: 12px 32px; font-size: 1rem; font-weight: 600; cursor: pointer;
+    transition: all .2s; margin-top: 8px;
+  }
+  .btn-save:hover { background: #2563eb; transform: translateY(-1px); }
+
+  .status { padding: 10px 14px; border-radius: 8px; font-size: .88rem; margin-top: 12px; display: none; }
+  .status.ok { background: rgba(34,197,94,.1); color: var(--green); border: 1px solid rgba(34,197,94,.3); display: block; }
+  .status.err { background: rgba(239,68,68,.1); color: var(--red); border: 1px solid rgba(239,68,68,.3); display: block; }
+
+  .mat-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .mat-tab { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text-muted); font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .2s; }
+  .mat-tab.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+
+  .note { font-size: .78rem; color: var(--text-muted); margin-top: 10px; padding: 8px 12px; background: rgba(245,158,11,.06); border: 1px solid rgba(245,158,11,.2); border-radius: 6px; }
+
+  .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .param-item { display: flex; flex-direction: column; gap: 5px; }
+  .param-item label { font-size: .8rem; color: var(--text-muted); }
+  .param-item input { width: 100%; }
+</style>
+</head>
+<body>
+<div style="max-width:1100px;margin:0 auto;">
+  <div class="header">
+    <div class="logo">⚙️</div>
+    <div>
+      <h1>Konfigurácia stroja</h1>
+      <div class="subtitle">GRYF 4022P KOMBI 12kW — rezné rýchlosti a parametre</div>
+    </div>
+    <a href="/" class="back-link">← Späť na kalkulátor</a>
+  </div>
+
+  <div class="grid">
+
+    <!-- Rezné rýchlosti -->
+    <div class="card full-width">
+      <h2>Rezné rýchlosti (m/min)</h2>
+      <div class="mat-tabs">
+        <button class="mat-tab active" onclick="showMat('ocel',this)">🔩 Oceľ (O₂)</button>
+        <button class="mat-tab" onclick="showMat('nerez',this)">✨ Nerez (N₂)</button>
+        <button class="mat-tab" onclick="showMat('hlinik',this)">🔷 Hliník (N₂)</button>
+      </div>
+
+      {% for mat, speeds in cutting_speeds.items() %}
+      <div id="mat-{{ mat }}" class="mat-section" style="display:{{ 'block' if mat == 'ocel' else 'none' }}">
+        <table>
+          <tr>
+            <th>Hrúbka</th>
+            {% for t in speeds.keys() %}<th>{{ t }} mm</th>{% endfor %}
+          </tr>
+          <tr>
+            <td>m/min</td>
+            {% for t, v in speeds.items() %}
+            <td><input type="number" id="spd_{{ mat }}_{{ t }}" value="{{ v }}" min="0.1" max="200" step="0.1"></td>
+            {% endfor %}
+          </tr>
+        </table>
+        <div class="note">⚠️ Hodnoty sú tabuľkové maximá — efektívna rýchlosť sa škáluje automaticky podľa veľkosti dielu (55–95%).</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Časy prepichnutia -->
+    <div class="card">
+      <h2>Čas prepichnutia (sekundy)</h2>
+      <table>
+        <tr><th>Hrúbka</th>{% for t in pierce_time.keys() %}<th>{{ t }}mm</th>{% endfor %}</tr>
+        <tr>
+          <td>sek</td>
+          {% for t, v in pierce_time.items() %}
+          <td><input type="number" id="prc_{{ t }}" value="{{ v }}" min="0.05" max="30" step="0.05"></td>
+          {% endfor %}
+        </tr>
+      </table>
+      <div class="note">12kW laser: tenké materiály (&lt;3mm) zvyčajne 0.1–0.3s</div>
+    </div>
+
+    <!-- Parametre stroja -->
+    <div class="card">
+      <h2>Parametre stroja</h2>
+      <div class="param-grid">
+        <div class="param-item">
+          <label>Rýchlozlom / rapid (m/min)</label>
+          <input type="number" id="mp_rapid_traverse_m_min" value="{{ machine_params.rapid_traverse_m_min }}" min="10" max="300" step="10">
+        </div>
+        <div class="param-item">
+          <label>Zrýchlenie (g)</label>
+          <input type="number" id="mp_acceleration_g" value="{{ machine_params.acceleration_g }}" min="0.5" max="5" step="0.1">
+        </div>
+        <div class="param-item">
+          <label>Overhead na presun + lead-in (s/prepich)</label>
+          <input type="number" id="mp_rapid_overhead_sec" value="{{ machine_params.rapid_overhead_sec }}" min="0.2" max="30" step="0.1">
+        </div>
+        <div class="param-item">
+          <label>Minimálny strojový čas / ks (min)</label>
+          <input type="number" id="mp_min_machine_time_min" value="{{ machine_params.min_machine_time_min }}" min="0.05" max="5" step="0.05">
+        </div>
+      </div>
+      <div class="note">Overhead = čas presunu hlavy medzi prepichmi + lead-in dráha. Pri rapid 140m/min je reálne 1–3s.</div>
+    </div>
+
+    <!-- Ceny materiálov -->
+    <div class="card">
+      <h2>Predvolené ceny materiálov (€/kg)</h2>
+      <div class="param-grid">
+        <div class="param-item">
+          <label>Oceľ (€/kg)</label>
+          <input type="number" id="mp2_ocel" value="{{ material_price.ocel }}" min="0.1" max="50" step="0.01">
+        </div>
+        <div class="param-item">
+          <label>Nerez (€/kg)</label>
+          <input type="number" id="mp2_nerez" value="{{ material_price.nerez }}" min="0.1" max="50" step="0.01">
+        </div>
+        <div class="param-item">
+          <label>Hliník (€/kg)</label>
+          <input type="number" id="mp2_hlinik" value="{{ material_price.hlinik }}" min="0.1" max="50" step="0.01">
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="max-width:1100px;margin:20px auto 0;">
+    <button class="btn-save" onclick="saveConfig()">💾 Uložiť nastavenia</button>
+    <div id="saveStatus" class="status"></div>
+    <p style="color:var(--text-muted);font-size:.78rem;margin-top:12px;">
+      ⚠️ Nastavenia sú platné do reštartu servera. Pre trvalé uloženie uprav priamo <code>app.py</code>.
+    </p>
+  </div>
+</div>
+
+<script>
+function showMat(mat, btn) {
+  document.querySelectorAll('.mat-section').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.mat-tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('mat-' + mat).style.display = 'block';
+  btn.classList.add('active');
+}
+
+async function saveConfig() {
+  const mats = ['ocel', 'nerez', 'hlinik'];
+  const thicknesses = {
+    ocel:   [1,2,3,4,5,6,8,10,12,15,20,25],
+    nerez:  [1,2,3,4,5,6,8,10,12,15,20],
+    hlinik: [1,2,3,4,5,6,8,10,12,15]
+  };
+  const pierceThicknesses = [1,2,3,4,5,6,8,10,12,15,20,25];
+  const machineKeys = ['rapid_traverse_m_min','acceleration_g','rapid_overhead_sec','min_machine_time_min'];
+
+  const speeds = {};
+  for (const mat of mats) {
+    speeds[mat] = {};
+    for (const t of thicknesses[mat]) {
+      const el = document.getElementById(`spd_${mat}_${t}`);
+      if (el && el.value) speeds[mat][t] = el.value;
+    }
+  }
+
+  const pierce = {};
+  for (const t of pierceThicknesses) {
+    const el = document.getElementById(`prc_${t}`);
+    if (el && el.value) pierce[t] = el.value;
+  }
+
+  const machine = {};
+  for (const k of machineKeys) {
+    const el = document.getElementById(`mp_${k}`);
+    if (el && el.value) machine[k] = el.value;
+  }
+
+  const mat_price = {};
+  for (const m of mats) {
+    const el = document.getElementById(`mp2_${m}`);
+    if (el && el.value) mat_price[m] = el.value;
+  }
+
+  try {
+    const res = await fetch('/config/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({speeds, pierce, machine, mat_price})
+    });
+    const data = await res.json();
+    const st = document.getElementById('saveStatus');
+    if (data.ok) {
+      st.className = 'status ok';
+      st.textContent = '✓ Nastavenia uložené — platia okamžite pre všetky nové výpočty';
+    } else {
+      st.className = 'status err';
+      st.textContent = '✗ Chyba: ' + data.error;
+    }
+  } catch(e) {
+    const st = document.getElementById('saveStatus');
+    st.className = 'status err';
+    st.textContent = '✗ ' + e.message;
+  }
+}
+</script>
+</body>
+</html>

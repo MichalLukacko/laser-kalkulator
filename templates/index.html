@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laser Kalkulátor — TecKon</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59,130,246,0.15);
+    --green: #22c55e;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+  }
+  h1 { font-size: 1.5rem; font-weight: 700; }
+  h2 { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 16px; }
+  .header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 32px;
+  }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), #6366f1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+  }
+  .subtitle { color: var(--text-muted); font-size: .85rem; margin-top: 2px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1100px; margin: 0 auto; }
+  @media(max-width:720px){ .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  /* Upload zone */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .drop-zone .icon { font-size: 2.5rem; margin-bottom: 8px; }
+  .drop-zone .label { color: var(--text-muted); font-size: .9rem; }
+  .drop-zone .label span { color: var(--accent); }
+
+  /* Geometry result */
+  .geo-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px;
+  }
+  .geo-item {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .geo-item .val { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+  .geo-item .lbl { font-size: .75rem; color: var(--text-muted); margin-top: 2px; }
+
+  /* Form */
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: .82rem; color: var(--text-muted); }
+  select, input[type=number], input[type=text] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: .95rem;
+    outline: none;
+    transition: border-color .2s;
+    width: 100%;
+  }
+  select:focus, input:focus { border-color: var(--accent); }
+
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    margin-top: 8px;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+  .btn-primary:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; transform: none; }
+
+  /* Results */
+  .result-big {
+    text-align: center;
+    padding: 24px;
+    background: var(--surface2);
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+  .result-big .price { font-size: 2.8rem; font-weight: 800; color: var(--green); }
+  .result-big .sublabel { color: var(--text-muted); font-size: .85rem; margin-top: 4px; }
+
+  .breakdown { display: flex; flex-direction: column; gap: 6px; }
+  .breakdown-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border-radius: 8px;
+    font-size: .88rem;
+  }
+  .breakdown-row .key { color: var(--text-muted); }
+  .breakdown-row .val { font-weight: 600; }
+  .breakdown-row.total {
+    border: 1px solid var(--accent);
+    background: var(--accent-glow);
+    font-size: .95rem;
+  }
+
+  /* Status messages */
+  .status {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: .88rem;
+    margin-top: 12px;
+    display: none;
+  }
+  .status.ok { background: rgba(34,197,94,.1); color: var(--green); border: 1px solid rgba(34,197,94,.3); display: block; }
+  .status.err { background: rgba(239,68,68,.1); color: var(--red); border: 1px solid rgba(239,68,68,.3); display: block; }
+  .status.loading { background: rgba(59,130,246,.1); color: var(--accent); border: 1px solid rgba(59,130,246,.3); display: block; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Tag */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: .72rem;
+    font-weight: 600;
+    background: rgba(59,130,246,.15);
+    color: var(--accent);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .section-title { margin-bottom: 16px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  #results-card { display: none; }
+
+  /* Tab buttons */
+  .tab-btn {
+    flex: 1;
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .tab-btn.active {
+    background: var(--accent-glow);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .tab-btn:hover:not(.active) {
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .ai-badge {
+    display: inline-block;
+    background: rgba(34,197,94,.1);
+    border: 1px solid rgba(34,197,94,.3);
+    color: #22c55e;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: .75rem;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .ai-row {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .ai-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: .82rem;
+  }
+  .ai-chip strong { color: var(--text); }
+  .ai-chip span { color: var(--text-muted); margin-right: 4px; }
+  .conf-high { color: var(--green); }
+  .conf-medium { color: var(--yellow); }
+  .conf-low { color: var(--red); }
+</style>
+</head>
+<body>
+
+<div style="max-width:1100px;margin:0 auto;">
+  <div class="header">
+    <div class="logo">⚡</div>
+    <div>
+      <h1>Laser Kalkulátor</h1>
+      <div class="subtitle">TecKon s.r.o. — výpočet ceny laserového výpalku</div> style="margin-left:auto;color:var(--text-muted);font-size:.82rem;text-decoration:none;padding:6px 12px;border:1px solid var(--border);border-radius:8px;" title="Nastavenia stroja">⚙️ Parametre stroja</a>
+    </div>
+    <a href="/config" style="margin-left:auto;color:var(--text-muted);font-size:.82rem;text-decoration:none;padding:6px 12px;border:1px solid var(--border);border-radius:8px;">⚙️ Parametre stroja</a>
+  </div>
+
+  <div class="grid">
+    <!-- Ľavý stĺpec: Upload + Parametre -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <!-- Upload DXF / PDF -->
+      <div class="card">
+        <h2 class="section-title">1. Načítaj výkres</h2>
+
+        <!-- Tab prepínač -->
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <button class="tab-btn active" id="tabDxf" onclick="switchTab('dxf')">
+            📐 DXF (rozvin)
+          </button>
+          <button class="tab-btn" id="tabPdf" onclick="switchTab('pdf')">
+            🤖 PDF / Obrázok <span class="tag" style="background:rgba(34,197,94,.15);color:#22c55e;">AI</span>
+          </button>
+        </div>
+
+        <!-- DXF zóna -->
+        <div id="zoneDxf">
+          <div class="drop-zone" id="dropZoneDxf">
+            <input type="file" id="fileInputDxf" accept=".dxf">
+            <div class="icon">📐</div>
+            <div class="label">Presuň DXF súbor sem<br>alebo <span>klikni pre výber</span></div>
+          </div>
+        </div>
+
+        <!-- PDF zóna -->
+        <div id="zonePdf" style="display:none;">
+          <div class="drop-zone" id="dropZonePdf">
+            <input type="file" id="fileInputPdf" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp">
+            <div class="icon">🤖</div>
+            <div class="label">Presuň PDF / PNG / TIF výkres sem<br>alebo <span>klikni pre výber</span><br>
+              <small style="color:var(--text-muted);font-size:.75rem;">Claude AI automaticky rozpozná rozmery, materiál a vypočíta rozvin</small>
+            </div>
+          </div>
+        </div>
+
+        <div id="uploadStatus" class="status"></div>
+
+        <!-- AI analýza box -->
+        <div id="aiAnalysis" style="display:none;">
+          <hr class="divider">
+          <h2>🤖 AI analýza výkresu</h2>
+          <div id="aiContent" style="font-size:.88rem;color:var(--text-muted);"></div>
+        </div>
+
+        <div id="geoResult" style="display:none;">
+          <hr class="divider">
+          <h2>Extrahovaná geometria</h2>
+          <div class="geo-grid">
+            <div class="geo-item">
+              <div class="val" id="gCutLength">—</div>
+              <div class="lbl">Dĺžka rezu</div>
+            </div>
+            <div class="geo-item">
+              <div class="val" id="gArea">—</div>
+              <div class="lbl">Plocha (bbox)</div>
+            </div>
+            <div class="geo-item">
+              <div class="val" id="gPierces">—</div>
+              <div class="lbl">Prepichnutia</div>
+            </div>
+            <div class="geo-item" style="cursor:pointer;" title="Klikni pre úpravu rozvinutého tvaru" onclick="toggleBboxEdit()">
+              <div class="val" id="gBbox" style="display:flex;align-items:center;gap:6px;">—
+                <span style="font-size:.7rem;color:var(--accent);font-weight:400;">✏️</span>
+              </div>
+              <div class="lbl">Rozmery polotovaru</div>
+            </div>
+          </div>
+          <!-- Manuálna korekcia rozvinutého tvaru -->
+          <div id="bboxEditRow" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:8px;">
+            <div style="font-size:.8rem;color:var(--yellow);margin-bottom:8px;">✏️ Oprav rozmery rozvinutého polotovaru (ak AI spočítala zle):</div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Šírka (mm)</label>
+                <input type="number" id="editBboxW" min="1" max="5000" step="1"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:90px;outline:none;">
+              </div>
+              <div style="color:var(--text-muted);margin-top:14px;">×</div>
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Výška (mm)</label>
+                <input type="number" id="editBboxH" min="1" max="5000" step="1"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:90px;outline:none;">
+              </div>
+              <button onclick="applyBboxEdit()"
+                style="background:var(--yellow);color:#1a1d27;border:none;border-radius:7px;padding:7px 16px;font-size:.85rem;font-weight:700;cursor:pointer;margin-top:14px;">
+                Použiť
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parametre -->
+      <div class="card">
+        <h2 class="section-title">2. Parametre kalkulácie</h2>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Materiál</label>
+            <select id="pMaterial">
+              <option value="ocel">Oceľ S235/S355</option>
+              <option value="pozink">Pozinkovaný DX51D+Z</option>
+              <option value="nerez">Nerez AISI 304</option>
+              <option value="hlinik">Hliník AlMg3</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Hrúbka (mm)</label>
+            <input type="number" id="pThickness" value="3" min="0.5" max="25" step="0.5">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Počet kusov</label>
+            <input type="number" id="pQty" value="1" min="1" step="1">
+          </div>
+          <div class="form-group">
+            <label>Sadzba lasera (€/hod)</label>
+            <input type="number" id="pHourly" value="80" min="1" step="1">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nastavovací čas (min/séria)</label>
+            <input type="number" id="pSetup" value="10" min="0" step="1">
+          </div>
+          <div class="form-group">
+            <label>Marža (%)</label>
+            <input type="number" id="pMargin" value="20" min="0" max="200" step="1">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nákupná cena mat. (€/kg) — voliteľné</label>
+            <input type="number" id="pMatPrice" placeholder="predvolené podľa materiálu" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Marža na materiál (%)</label>
+            <input type="number" id="pMatMargin" value="20" min="0" max="100" step="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Scrap factor (koef. odpadu skeletu)</label>
+            <input type="number" id="pScrap" value="1.25" min="1.0" max="2.0" step="0.05"
+              title="1.25 = 25% odpad (štandard), 1.35 = zložité tvary">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="calcBtn" onclick="calculate()" disabled>
+          Vypočítať cenu
+        </button>
+      </div>
+    </div>
+
+    <!-- Pravý stĺpec: Výsledky -->
+    <div>
+      <div class="card" id="results-card">
+        <h2 class="section-title">Výsledok kalkulácie</h2>
+
+        <div class="result-big">
+          <div class="price" id="rPriceTotal">—</div>
+          <div class="sublabel" id="rPriceSublabel">celková cena vrátane marže</div>
+        </div>
+
+        <div class="breakdown">
+          <div class="breakdown-row">
+            <span class="key">Cena / kus</span>
+            <span class="val" id="rPricePerPiece">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Rezná rýchlosť (tabuľková)</span>
+            <span class="val" id="rSpeed">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Efektívna rýchlosť <span id="rEffPct" style="color:var(--text-muted);font-weight:400;"></span></span>
+            <span class="val" id="rEffSpeed">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Čas rezania (1 ks)</span>
+            <span class="val" id="rCutTime">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Čas prepichnutí</span>
+            <span class="val" id="rPierceTime">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Rapid presun + lead-in/out</span>
+            <span class="val" id="rRapidTime">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Nastavovací čas / ks</span>
+            <span class="val" id="rSetupTime">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Celkový strojový čas / ks</span>
+            <span class="val" id="rTotalTime">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Náklady stroj / ks</span>
+            <span class="val" id="rMachineCost">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Rezný plyn</span>
+            <span class="val" id="rGas">—</span>
+          </div>
+          <div class="breakdown-row" id="rHandlingRow" style="display:none">
+            <span class="key">Príplatok manipulácia <span id="rHandlingLabel" style="color:var(--yellow);font-size:.8rem"></span></span>
+            <span class="val" id="rHandlingSurcharge">—</span>
+          </div>
+          <div class="breakdown-row" id="rDrillRow" style="display:none;border:1px solid var(--yellow);background:rgba(245,158,11,.05)">
+            <span class="key">⚠️ Vŕtanie malých dier <span id="rDrillHoles" style="color:var(--yellow);font-size:.8rem"></span></span>
+            <span class="val" id="rDrillCost" style="color:var(--yellow)">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Čistá hmotnosť dielu</span>
+            <span class="val" id="rWeightNet">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Účtovaná hmotnosť <span id="rScrapFactor" style="color:var(--text-muted);font-weight:400;"></span></span>
+            <span class="val" id="rWeightBilled">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Nákupná cena mat. / ks</span>
+            <span class="val" id="rMatCostBuy">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Predajná cena mat. / ks <span id="rMatMarginPct" style="color:var(--text-muted);font-weight:400;"></span></span>
+            <span class="val" id="rMatCostSell">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Zisk z materiálu / ks</span>
+            <span class="val" id="rMatMarginEur" style="color:var(--green)">—</span>
+          </div>
+          <div class="breakdown-row">
+            <span class="key">Vlastné náklady / ks (stroj + mat. nákup)</span>
+            <span class="val" id="rCostPerPiece">—</span>
+          </div>
+          <div class="breakdown-row total">
+            <span class="key">Predajná cena / ks (stroj +<span id="rMarginPct">—</span>% + mat. s maržou)</span>
+            <span class="val" id="rFinalPerPiece">—</span>
+          </div>
+        </div>
+
+        <!-- Ohybárska sekcia -->
+        <div id="bendingSection" style="display:none;margin-top:24px;border-top:1px solid var(--border);padding-top:20px;">
+          <h2 class="section-title" style="margin-bottom:12px;">🔧 Ohýbanie <span style="font-size:.75rem;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">(editovateľné)</span></h2>
+
+          <div id="bendList" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;"></div>
+
+          <!-- Pridať ohyb -->
+          <div style="margin-bottom:14px;">
+            <button onclick="toggleAddBend()" id="btnAddBend"
+              style="background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:6px 14px;font-size:.82rem;color:var(--accent);cursor:pointer;">
+              + Pridať ohyb
+            </button>
+            <div id="addBendForm" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:8px;">
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+                <div>
+                  <label style="font-size:.75rem;color:var(--text-muted);display:block;">Uhol (°)</label>
+                  <input type="number" id="newBendAngle" value="90" min="1" max="180"
+                    style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:70px;outline:none;">
+                </div>
+                <div>
+                  <label style="font-size:.75rem;color:var(--text-muted);display:block;">Polomer R (mm)</label>
+                  <input type="number" id="newBendRadius" value="2" min="0.1" max="50" step="0.5"
+                    style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:70px;outline:none;">
+                </div>
+                <div>
+                  <label style="font-size:.75rem;color:var(--text-muted);display:block;">Dĺžka (mm)</label>
+                  <input type="number" id="newBendLength" value="440" min="1" max="4000" step="1"
+                    style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:80px;outline:none;">
+                </div>
+                <button onclick="addBend()"
+                  style="background:var(--accent);color:white;border:none;border-radius:7px;padding:7px 14px;font-size:.85rem;font-weight:600;cursor:pointer;">
+                  Pridať
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;">
+            <div>
+              <label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Marža ohýbanie (%)</label>
+              <input type="number" id="pBendMargin" value="20" min="0" max="100" step="1"
+                style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:90px;outline:none;">
+            </div>
+            <button onclick="calculateBending()"
+              style="background:#6366f1;color:white;border:none;border-radius:8px;padding:8px 18px;font-size:.88rem;font-weight:600;cursor:pointer;">
+              Vypočítať ohýbanie
+            </button>
+          </div>
+
+          <div id="bendResults" style="display:none;">
+            <div class="breakdown">
+              <div class="breakdown-row">
+                <span class="key">Počet ohybov / ks</span>
+                <span class="val" id="rBendCount">—</span>
+              </div>
+              <div class="breakdown-row">
+                <span class="key">Cena / ohyb (tier podľa série)</span>
+                <span class="val" id="rBendPricePerBend">—</span>
+              </div>
+              <div class="breakdown-row">
+                <span class="key">Setup fee (program + zarážky)</span>
+                <span class="val" id="rBendSetup">—</span>
+              </div>
+              <div class="breakdown-row">
+                <span class="key">Ohýbanie netto / ks</span>
+                <span class="val" id="rBendCostNet">—</span>
+              </div>
+              <div class="breakdown-row total">
+                <span class="key">Ohýbanie s maržou / ks</span>
+                <span class="val" id="rBendSellPerPiece">—</span>
+              </div>
+              <div class="breakdown-row" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:8px;padding:10px 12px;margin-top:8px;">
+                <span class="key" style="font-weight:700;font-size:.95rem;">💰 Celková cena s ohýbaním</span>
+                <span class="val" style="font-size:1.1rem;font-weight:700;color:#a5b4fc;" id="rTotalWithBending">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Nesting kalkulátor -->
+      <div class="card" id="nestingCard" style="margin-top:20px;display:none;">
+        <h2 class="section-title">📐 Vyťaženosť tabule</h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
+          <div>
+            <label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Šírka tabule (mm)</label>
+            <input type="number" id="sheetW" value="3000" min="100" max="6000" step="100"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:100px;outline:none;">
+          </div>
+          <div>
+            <label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Výška tabule (mm)</label>
+            <input type="number" id="sheetH" value="1500" min="100" max="4000" step="100"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:100px;outline:none;">
+          </div>
+          <button onclick="calculateNesting()"
+            style="background:var(--accent);color:white;border:none;border-radius:8px;padding:8px 18px;font-size:.88rem;font-weight:600;cursor:pointer;">
+            Vypočítať
+          </button>
+        </div>
+        <div id="nestingResults" style="display:none;">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;">
+            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;">
+              <div style="font-size:1.6rem;font-weight:700;color:var(--accent)" id="nPartsPerSheet">—</div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:2px;">ks / tabuľa</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;">
+              <div style="font-size:1.6rem;font-weight:700;color:var(--green)" id="nUtilization">—</div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:2px;">vyťaženosť</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;">
+              <div style="font-size:1.6rem;font-weight:700;color:var(--yellow)" id="nSheetsNeeded">—</div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:2px;">tabúľ pre sériu</div>
+            </div>
+          </div>
+          <div class="breakdown">
+            <div class="breakdown-row">
+              <span class="key">Orientácia dielu</span>
+              <span class="val" id="nOrientation">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Rozloženie (stĺpce × rady)</span>
+              <span class="val" id="nLayout">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Rozmer dielu + medzera</span>
+              <span class="val" id="nPartWithGap">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Odpad na tabuli</span>
+              <span class="val" id="nWaste">—</span>
+            </div>
+          </div>
+          <!-- Vizualizácia -->
+          <div style="margin-top:14px;">
+            <canvas id="nestingCanvas" style="width:100%;border-radius:8px;background:var(--surface2);"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manuálny režim ak niet DXF -->
+      <div class="card" id="manualCard" style="margin-top:20px;">
+        <h2 class="section-title">Manuálny vstup <span class="tag">bez DXF</span></h2>
+        <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:14px;">
+          Ak nemáš DXF, zadaj hodnoty ručne z výkresu:
+        </p>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Dĺžka rezu (mm)</label>
+            <input type="number" id="mCutLength" placeholder="napr. 2500" min="0" step="1" oninput="manualUpdate()">
+          </div>
+          <div class="form-group">
+            <label>Šírka polotovaru (mm)</label>
+            <input type="number" id="mWidth" placeholder="napr. 300" min="0" step="1" oninput="manualUpdate()">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Výška polotovaru (mm)</label>
+            <input type="number" id="mHeight" placeholder="napr. 200" min="0" step="1" oninput="manualUpdate()">
+          </div>
+          <div class="form-group">
+            <label>Počet prepichnutí (otvorov)</label>
+            <input type="number" id="mPierces" placeholder="napr. 4" value="1" min="1" step="1" oninput="manualUpdate()">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let geometry = null;
+let currentTab = 'dxf';
+
+function toggleBboxEdit() {
+  const row = document.getElementById('bboxEditRow');
+  const visible = row.style.display !== 'none';
+  row.style.display = visible ? 'none' : 'block';
+  if (!visible && geometry) {
+    document.getElementById('editBboxW').value = geometry.bbox_width_mm || '';
+    document.getElementById('editBboxH').value = geometry.bbox_height_mm || '';
+  }
+}
+
+function applyBboxEdit() {
+  const w = parseFloat(document.getElementById('editBboxW').value);
+  const h = parseFloat(document.getElementById('editBboxH').value);
+  if (!w || !h || !geometry) return;
+  geometry.bbox_width_mm = w;
+  geometry.bbox_height_mm = h;
+  // Prepočítaj cut_length ak je to rozvinnutý tvar (len obvod)
+  // Aktualizuj zobrazenie
+  document.getElementById('gBbox').innerHTML =
+    `<strong style="color:var(--yellow)">${w} × ${h} mm</strong>
+     <span style="font-size:.7rem;color:var(--accent);font-weight:400;">✏️</span>`;
+  document.getElementById('gArea').textContent =
+    (w * h / 100).toFixed(1) + ' cm²';
+  document.getElementById('bboxEditRow').style.display = 'none';
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('zoneDxf').style.display = tab === 'dxf' ? 'block' : 'none';
+  document.getElementById('zonePdf').style.display = tab === 'pdf' ? 'block' : 'none';
+  document.getElementById('tabDxf').classList.toggle('active', tab === 'dxf');
+  document.getElementById('tabPdf').classList.toggle('active', tab === 'pdf');
+  // Reset stavu
+  document.getElementById('uploadStatus').className = 'status';
+  document.getElementById('geoResult').style.display = 'none';
+  document.getElementById('aiAnalysis').style.display = 'none';
+  geometry = null;
+  document.getElementById('calcBtn').disabled = true;
+}
+
+// ── Drag & drop DXF ──────────────────────────────
+const dzDxf = document.getElementById('dropZoneDxf');
+dzDxf.addEventListener('dragover', e => { e.preventDefault(); dzDxf.classList.add('drag-over'); });
+dzDxf.addEventListener('dragleave', () => dzDxf.classList.remove('drag-over'));
+dzDxf.addEventListener('drop', e => {
+  e.preventDefault(); dzDxf.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) uploadDxf(f);
+});
+document.getElementById('fileInputDxf').addEventListener('change', e => {
+  if (e.target.files[0]) uploadDxf(e.target.files[0]);
+});
+
+// ── Drag & drop PDF ──────────────────────────────
+const dzPdf = document.getElementById('dropZonePdf');
+dzPdf.addEventListener('dragover', e => { e.preventDefault(); dzPdf.classList.add('drag-over'); });
+dzPdf.addEventListener('dragleave', () => dzPdf.classList.remove('drag-over'));
+dzPdf.addEventListener('drop', e => {
+  e.preventDefault(); dzPdf.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) uploadPdf(f);
+});
+document.getElementById('fileInputPdf').addEventListener('change', e => {
+  if (e.target.files[0]) uploadPdf(e.target.files[0]);
+});
+
+function setStatus(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = 'status ' + type;
+  el.innerHTML = msg;
+}
+
+async function uploadDxf(file) {
+  setStatus('uploadStatus', 'loading', '<span class="spinner"></span>Načítavam DXF...');
+  document.getElementById('aiAnalysis').style.display = 'none';
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/upload-dxf', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    geometry = data.geometry;
+    window._aiHoles = [];
+    window._aiBends = [];
+    showGeometry(geometry);
+    setStatus('uploadStatus', 'ok', `✓ ${file.name} — geometria načítaná`);
+    document.getElementById('calcBtn').disabled = false;
+  } catch(e) {
+    setStatus('uploadStatus', 'err', '✗ Chyba: ' + e.message);
+  }
+}
+
+async function uploadPdf(file) {
+  setStatus('uploadStatus', 'loading', '<span class="spinner"></span>🤖 Claude analyzuje výkres... (môže trvať 10-20s)');
+  document.getElementById('aiAnalysis').style.display = 'none';
+  document.getElementById('geoResult').style.display = 'none';
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/upload-pdf', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    geometry = data.geometry;
+    showGeometry(geometry);
+
+    if (data.ai_analysis) {
+      window._aiHoles = data.ai_analysis.holes || [];
+      window._aiBends = data.ai_analysis.bends || [];
+      showAiAnalysis(data.ai_analysis);
+      // Auto-fill material and thickness from AI
+      if (data.ai_analysis.material) {
+        const matMap = {'ocel':'ocel','nerez':'nerez','hlinik':'hlinik','steel':'ocel','stainless':'nerez','aluminum':'hlinik','aluminium':'hlinik'};
+        const mat = matMap[data.ai_analysis.material.toLowerCase()] || 'nerez';
+        document.getElementById('pMaterial').value = mat;
+      }
+      if (data.ai_analysis.thickness_mm) {
+        document.getElementById('pThickness').value = data.ai_analysis.thickness_mm;
+      }
+    }
+
+    const conf = data.ai_analysis?.confidence || 'medium';
+    const confEmoji = conf === 'high' ? '✓' : conf === 'medium' ? '⚠' : '⚠';
+    setStatus('uploadStatus', 'ok', `${confEmoji} ${file.name} — AI analýza dokončená (istota: ${conf})`);
+    document.getElementById('calcBtn').disabled = false;
+  } catch(e) {
+    setStatus('uploadStatus', 'err', '✗ Chyba: ' + e.message);
+  }
+}
+
+function showAiAnalysis(ai) {
+  const box = document.getElementById('aiAnalysis');
+  const content = document.getElementById('aiContent');
+  box.style.display = 'block';
+
+  const confClass = ai.confidence === 'high' ? 'conf-high' : ai.confidence === 'medium' ? 'conf-medium' : 'conf-low';
+  const confLabel = ai.confidence === 'high' ? '✓ vysoká' : ai.confidence === 'medium' ? '⚠ stredná' : '⚠ nízka';
+
+  let html = `<div class="ai-row">`;
+  if (ai.part_description) html += `<div class="ai-chip"><span>Diel:</span><strong>${ai.part_description}</strong></div>`;
+  if (ai.material) html += `<div class="ai-chip"><span>Materiál:</span><strong>${ai.material}</strong></div>`;
+  if (ai.thickness_mm) html += `<div class="ai-chip"><span>Hrúbka:</span><strong>${ai.thickness_mm} mm</strong></div>`;
+  html += `<div class="ai-chip"><span>Istota:</span><strong class="${confClass}">${confLabel}</strong></div>`;
+  html += `</div>`;
+
+  if (ai.bends && ai.bends.length > 0) {
+    html += `<div style="margin-bottom:6px;"><span style="color:var(--text-muted);">Ohyby:</span> `;
+    ai.bends.forEach(b => {
+      html += `<span class="ai-chip">${b.angle_deg}° / R${b.radius_mm}mm / L${b.length_mm}mm</span> `;
+    });
+    html += `</div>`;
+  }
+
+  if (ai.holes && ai.holes.length > 0) {
+    html += `<div style="margin-bottom:6px;"><span style="color:var(--text-muted);">Otvory:</span> `;
+    ai.holes.forEach(h => {
+      html += `<span class="ai-chip">⌀${h.diameter_mm}mm × ${h.count}ks</span> `;
+    });
+    html += `</div>`;
+  }
+
+  if (ai.notes) {
+    html += `<div style="margin-top:8px;padding:8px;background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);border-radius:6px;font-size:.8rem;color:var(--yellow);">
+      💬 ${ai.notes}
+    </div>`;
+  }
+
+  content.innerHTML = html;
+}
+
+function showGeometry(g) {
+  document.getElementById('geoResult').style.display = 'block';
+  document.getElementById('gCutLength').textContent = (g.cut_length_mm/1000).toFixed(2) + ' m';
+  document.getElementById('gArea').textContent = (g.area_mm2/100).toFixed(1) + ' cm²';
+  document.getElementById('gPierces').textContent = g.pierce_count;
+  document.getElementById('gBbox').textContent = g.bbox_width_mm + ' × ' + g.bbox_height_mm + ' mm';
+}
+
+function manualUpdate() {
+  const cl = parseFloat(document.getElementById('mCutLength').value) || 0;
+  const w  = parseFloat(document.getElementById('mWidth').value) || 0;
+  const h  = parseFloat(document.getElementById('mHeight').value) || 0;
+  const p  = parseInt(document.getElementById('mPierces').value) || 1;
+
+  if (cl > 0 && w > 0 && h > 0) {
+    geometry = {
+      cut_length_mm: cl,
+      area_mm2: w * h,
+      pierce_count: p,
+      bbox_width_mm: w,
+      bbox_height_mm: h,
+    };
+    showGeometry(geometry);
+    document.getElementById('calcBtn').disabled = false;
+    document.getElementById('uploadStatus').className = 'status ok';
+    document.getElementById('uploadStatus').textContent = '✓ Manuálne zadané hodnoty';
+    document.getElementById('uploadStatus').style.display = 'block';
+  }
+}
+
+async function calculate() {
+  if (!geometry) return;
+
+  const params = {
+    material:          document.getElementById('pMaterial').value,
+    thickness_mm:      document.getElementById('pThickness').value,
+    quantity:          document.getElementById('pQty').value,
+    hourly_rate:       document.getElementById('pHourly').value,
+    setup_time_min:    document.getElementById('pSetup').value,
+    margin_pct:        document.getElementById('pMargin').value,
+    material_price_kg:     document.getElementById('pMatPrice').value || null,
+    material_margin_pct:   document.getElementById('pMatMargin').value,
+    scrap_factor:          document.getElementById('pScrap').value,
+    holes:                 window._aiHoles || [],
+  };
+
+  const btn = document.getElementById('calcBtn');
+  btn.disabled = true;
+  btn.textContent = 'Počítam...';
+
+  try {
+    const res = await fetch('/calculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geometry, params })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    showResults(data.result, parseInt(params.quantity));
+  } catch(e) {
+    alert('Chyba: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Vypočítať cenu';
+  }
+}
+
+function fmt(val, decimals=2) {
+  return parseFloat(val).toFixed(decimals).replace('.', ',');
+}
+function fmtEur(val) { return fmt(val, 2) + ' €'; }
+function fmtMin(val) { return fmt(val, 2) + ' min'; }
+
+function showResults(r, qty) {
+  const card = document.getElementById('results-card');
+  card.style.display = 'block';
+
+  document.getElementById('rPriceTotal').textContent = fmtEur(r.price_total);
+  document.getElementById('rPriceSublabel').textContent =
+    qty > 1 ? `celková cena za ${qty} ks vrátane marže` : 'cena za 1 ks vrátane marže';
+
+  document.getElementById('rPricePerPiece').textContent = fmtEur(r.price_per_piece);
+  document.getElementById('rSpeed').textContent = fmt(r.speed_m_min, 1) + ' m/min';
+  document.getElementById('rEffSpeed').textContent = fmt(r.effective_speed_m_min, 1) + ' m/min';
+  document.getElementById('rEffPct').textContent = '(' + r.efficiency_pct + '% — korekcia na veľkosť dielu)';
+  document.getElementById('rCutTime').textContent = fmtMin(r.cutting_time_min);
+  document.getElementById('rPierceTime').textContent = fmtMin(r.pierce_time_min);
+  document.getElementById('rRapidTime').textContent = fmtMin(r.rapid_time_min);
+  document.getElementById('rSetupTime').textContent = fmtMin(r.setup_time_per_piece_min);
+  document.getElementById('rTotalTime').textContent = fmtMin(r.total_time_per_piece_min);
+  document.getElementById('rMachineCost').textContent = fmtEur(r.machine_cost_per_piece);
+
+  // Plyn
+  const gasColors = {vzduch:'#22c55e', N2:'#3b82f6', O2:'#f59e0b'};
+  document.getElementById('rGas').innerHTML =
+    `<span style="color:${gasColors[r.gas]||'#e2e8f0'};font-weight:700">${r.gas}</span> — ${fmtEur(r.gas_cost_per_piece)}`;
+
+  // Manipulácia
+  if (r.handling_factor > 1.0) {
+    document.getElementById('rHandlingRow').style.display = 'flex';
+    document.getElementById('rHandlingLabel').textContent = r.handling_label;
+    document.getElementById('rHandlingSurcharge').textContent = '+' + fmtEur(r.handling_surcharge);
+  } else {
+    document.getElementById('rHandlingRow').style.display = 'none';
+  }
+
+  // Miniatúrne diery
+  if (r.small_holes && r.small_holes.length > 0) {
+    document.getElementById('rDrillRow').style.display = 'flex';
+    const holeDesc = r.small_holes.map(h => `⌀${h.diameter_mm}mm×${h.count}ks`).join(', ');
+    document.getElementById('rDrillHoles').textContent = `(${holeDesc} — bude vŕtané)`;
+    document.getElementById('rDrillCost').textContent = '+' + fmtEur(r.drill_cost);
+  } else {
+    document.getElementById('rDrillRow').style.display = 'none';
+  }
+  document.getElementById('rWeightNet').textContent = fmt(r.weight_kg_net, 3) + ' kg';
+  document.getElementById('rWeightBilled').textContent = fmt(r.weight_kg_billed, 3) + ' kg';
+  document.getElementById('rScrapFactor').textContent = '(scrap ×' + r.scrap_factor + ')';
+  document.getElementById('rMatCostBuy').textContent = fmtEur(r.material_cost_buy) + '  (' + fmt(r.mat_price_kg_buy,2) + ' €/kg)';
+  document.getElementById('rMatCostSell').textContent = fmtEur(r.material_cost_sell) + '  (' + fmt(r.mat_price_kg_sell,2) + ' €/kg)';
+  document.getElementById('rMatMarginPct').textContent = '(+' + r.mat_margin_pct + '% marža na mat.)';
+  document.getElementById('rMatMarginEur').textContent = '+' + fmtEur(r.material_margin_eur);
+  document.getElementById('rAreaGap') && (document.getElementById('rAreaGap').textContent = fmt(r.area_with_gap_mm2/100,1) + ' cm²');
+  document.getElementById('rMatCost') && (document.getElementById('rMatCost').textContent = fmtEur(r.material_cost_sell));
+  document.getElementById('rCostPerPiece').textContent = fmtEur(r.cost_per_piece);
+  document.getElementById('rMarginPct').textContent = ' ' + r.margin_pct;
+  document.getElementById('rFinalPerPiece').textContent = fmtEur(r.price_per_piece);
+
+  // Zobraz nesting kalkulátor
+  document.getElementById('nestingCard').style.display = 'block';
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Zobraziť ohybársku sekciu — vždy ak je PDF (môžu byť 0 ohybov a user pridá manuálne)
+  const bendSection = document.getElementById('bendingSection');
+  bendSection.style.display = currentTab === 'pdf' ? 'block' : 'none';
+  renderBendList();
+  document.getElementById('bendResults').style.display = 'none';
+}
+
+function renderBendList() {
+  const bends = window._aiBends || [];
+  const bendList = document.getElementById('bendList');
+  if (bends.length === 0) {
+    bendList.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted);">Žiadne ohyby — pridaj manuálne</span>';
+    return;
+  }
+  bendList.innerHTML = bends.map((b, i) =>
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:.82rem;display:flex;align-items:center;gap:8px;">
+      <span style="color:var(--text-muted)">Ohyb ${i+1}:</span>
+      <strong>${b.angle_deg}°</strong> · R${b.radius_mm}mm · ${b.length_mm}mm
+      <button onclick="removeBend(${i})"
+        style="background:rgba(239,68,68,.15);border:none;color:var(--red);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:.8rem;">✕</button>
+    </div>`
+  ).join('');
+}
+
+function toggleAddBend() {
+  const form = document.getElementById('addBendForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function addBend() {
+  const angle = parseFloat(document.getElementById('newBendAngle').value) || 90;
+  const radius = parseFloat(document.getElementById('newBendRadius').value) || 2;
+  const length = parseFloat(document.getElementById('newBendLength').value) || 440;
+  if (!window._aiBends) window._aiBends = [];
+  window._aiBends.push({ angle_deg: angle, radius_mm: radius, length_mm: length });
+  renderBendList();
+  document.getElementById('addBendForm').style.display = 'none';
+  document.getElementById('bendResults').style.display = 'none';
+}
+
+function removeBend(index) {
+  if (!window._aiBends) return;
+  window._aiBends.splice(index, 1);
+  renderBendList();
+  document.getElementById('bendResults').style.display = 'none';
+}
+
+async function calculateBending() {
+  const bends = window._aiBends || [];
+  if (!bends.length) return;
+
+  const qty = parseInt(document.getElementById('pQty').value) || 1;
+  const margin = parseFloat(document.getElementById('pBendMargin').value) || 20;
+  // Čistá hmotnosť z výsledkov kalkulácie (ak bola vypočítaná)
+  const weightEl = document.getElementById('rWeightNet');
+  const weight_kg = weightEl ? parseFloat(weightEl.textContent.replace(',','.').replace(' kg','')) || 0 : 0;
+
+  try {
+    const res = await fetch('/calculate-bending', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bends, qty, margin_pct: margin, weight_kg })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const r = data.result;
+
+    document.getElementById('rBendCount').textContent = r.bend_count + ' × / ks';
+    document.getElementById('rBendPricePerBend').textContent =
+      fmtEur(r.price_per_bend) + ' / ohyb' +
+      (r.weight_factor > 1.0 ? ` <span style="color:var(--yellow);font-size:.8rem">${r.weight_label}</span>` : '');
+    document.getElementById('rBendPricePerBend').innerHTML =
+      fmtEur(r.price_per_bend) + ' / ohyb (základ)' +
+      (r.weight_factor > 1.0 ? ` · <span style="color:var(--yellow);font-size:.8rem">${r.weight_label}</span>` : '');
+    document.getElementById('rBendSetup').textContent =
+      fmtEur(r.setup_fee_total) + ' celkom → ' + fmtEur(r.setup_fee_per_piece) + ' / ks';
+    document.getElementById('rBendCostNet').textContent = fmtEur(r.bending_cost_net);
+    document.getElementById('rBendSellPerPiece').textContent = fmtEur(r.bending_sell_per_piece);
+
+    // Celková cena = laser + ohýbanie
+    const laserTotal = parseFloat(
+      document.getElementById('rPriceTotal').textContent.replace(',','.').replace(' €','')
+    );
+    const bendTotal = r.bending_total;
+    const totalEl = document.getElementById('rTotalWithBending');
+    totalEl.textContent = '';
+    const totalPrice = document.createElement('span');
+    totalPrice.textContent = fmtEur(laserTotal + bendTotal);
+    const totalNote = document.createElement('span');
+    totalNote.style.cssText = 'color:var(--text-muted);font-size:.78rem;font-weight:400';
+    totalNote.textContent = ` (laser ${fmtEur(laserTotal)} + ohyb ${fmtEur(bendTotal)})`;
+    totalEl.appendChild(totalPrice);
+    totalEl.appendChild(totalNote);
+
+    document.getElementById('bendResults').style.display = 'block';
+  } catch(e) {
+    alert('Chyba ohýbanie: ' + e.message);
+  }
+}
+function calculateNesting() {
+  if (!geometry) return;
+
+  const sheetW = parseFloat(document.getElementById('sheetW').value) || 3000;
+  const sheetH = parseFloat(document.getElementById('sheetH').value) || 1500;
+  const partW = geometry.bbox_width_mm;
+  const partH = geometry.bbox_height_mm;
+  const t = parseFloat(document.getElementById('pThickness').value) || 2;
+  const qty = parseInt(document.getElementById('pQty').value) || 1;
+  const gap = Math.max(5, 2 * t);
+
+  // Pomocná funkcia — počet dielov v obdĺžniku
+  function fitRect(areaW, areaH, pw, ph) {
+    if (areaW <= 0 || areaH <= 0 || pw <= 0 || ph <= 0) return 0;
+    return Math.floor(areaW / (pw + gap)) * Math.floor(areaH / (ph + gap));
+  }
+
+  // ── 1. Čistá orientácia A (normálna)
+  const colsA = Math.floor(sheetW / (partW + gap));
+  const rowsA = Math.floor(sheetH / (partH + gap));
+  const pureA = { count: colsA * rowsA, strips: [{y:0, h:sheetH, pw:partW, ph:partH, cols:colsA, rows:rowsA}] };
+
+  // ── 2. Čistá orientácia B (otočená 90°)
+  const colsB = Math.floor(sheetW / (partH + gap));
+  const rowsB = Math.floor(sheetH / (partW + gap));
+  const pureB = { count: colsB * rowsB, strips: [{y:0, h:sheetH, pw:partH, ph:partW, cols:colsB, rows:rowsB}] };
+
+  // ── 3. Strip nesting — kombinuj A a B prúžky horizontálne
+  // Pre každé rozdelenie: n prúžkov A navrchu, zvyšok B (a opačne)
+  let bestMixed = { count: 0, strips: [] };
+
+  for (let nRowsA = 0; nRowsA * (partH + gap) <= sheetH; nRowsA++) {
+    const usedH_A = nRowsA * (partH + gap);
+    const remH = sheetH - usedH_A;
+    const cA = Math.floor(sheetW / (partW + gap));
+    const countA = nRowsA * cA;
+    const cB = Math.floor(sheetW / (partH + gap));
+    const rB = Math.floor(remH / (partW + gap));
+    const countB = cB * rB;
+    const total = countA + countB;
+    if (total > bestMixed.count) {
+      bestMixed = {
+        count: total,
+        strips: [
+          { y: 0,        h: usedH_A, pw: partW, ph: partH, cols: cA, rows: nRowsA, label: 'A' },
+          { y: usedH_A,  h: remH,    pw: partH, ph: partW, cols: cB, rows: rB,     label: 'B' }
+        ]
+      };
+    }
+  }
+  for (let nRowsB = 0; nRowsB * (partW + gap) <= sheetH; nRowsB++) {
+    const usedH_B = nRowsB * (partW + gap);
+    const remH = sheetH - usedH_B;
+    const cB = Math.floor(sheetW / (partH + gap));
+    const countB = nRowsB * cB;
+    const cA = Math.floor(sheetW / (partW + gap));
+    const rA = Math.floor(remH / (partH + gap));
+    const countA = cA * rA;
+    const total = countA + countB;
+    if (total > bestMixed.count) {
+      bestMixed = {
+        count: total,
+        strips: [
+          { y: 0,        h: usedH_B, pw: partH, ph: partW, cols: cB, rows: nRowsB, label: 'B' },
+          { y: usedH_B,  h: remH,    pw: partW, ph: partH, cols: cA, rows: rA,     label: 'A' }
+        ]
+      };
+    }
+  }
+
+  // Vyber najlepšie riešenie
+  const candidates = [pureA, pureB, bestMixed];
+  const best = candidates.reduce((a, b) => b.count > a.count ? b : a);
+  const partsPerSheet = best.count;
+
+  const sheetArea = sheetW * sheetH;
+  const usedArea = partsPerSheet * partW * partH;
+  const utilization = (usedArea / sheetArea * 100).toFixed(1);
+  const sheetsNeeded = Math.ceil(qty / Math.max(partsPerSheet, 1));
+  const waste = (100 - utilization).toFixed(1);
+
+  // Popis orientácie
+  const isMixed = best === bestMixed && bestMixed.strips.some(s=>s.label==='A') && bestMixed.strips.some(s=>s.label==='B');
+  const orientLabel = isMixed
+    ? `Kombinovaná (prúžky A+B)`
+    : (best === pureB ? `Otočená 90° (${partH}×${partW}mm)` : `Normálna (${partW}×${partH}mm)`);
+
+  const mainStrip = best.strips[0];
+
+  document.getElementById('nPartsPerSheet').textContent = partsPerSheet + ' ks';
+  document.getElementById('nUtilization').textContent = utilization + '%';
+  document.getElementById('nSheetsNeeded').textContent = sheetsNeeded + ' ks';
+  document.getElementById('nOrientation').textContent = orientLabel;
+  document.getElementById('nLayout').textContent =
+    best.strips.filter(s=>s.rows>0).map(s=>`${s.cols}×${s.rows} (${s.label||''})`).join(' + ');
+  document.getElementById('nPartWithGap').textContent =
+    `${partW}×${partH}mm + ${gap}mm medzera`;
+  document.getElementById('nWaste').textContent =
+    waste + '% (' + fmt((sheetArea - usedArea)/1e6, 4) + ' m²)';
+
+  document.getElementById('nestingResults').style.display = 'block';
+  drawNestingStrips(sheetW, sheetH, best.strips, gap);
+}
+
+function drawNestingStrips(sheetW, sheetH, strips, gap) {
+  const canvas = document.getElementById('nestingCanvas');
+  const maxW = canvas.parentElement.offsetWidth - 20;
+  const scale = Math.min(maxW / sheetW, 320 / sheetH);
+  canvas.width  = Math.round(sheetW * scale);
+  canvas.height = Math.round(sheetH * scale);
+  canvas.style.height = canvas.height + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#1a1d27';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
+  const palette = [
+    ['rgba(59,130,246,0.55)', 'rgba(37,99,235,0.55)'],   // modrá — orientácia A
+    ['rgba(99,102,241,0.55)', 'rgba(79,70,229,0.55)'],   // fialová — orientácia B
+  ];
+
+  strips.forEach((strip, si) => {
+    const { y: sy, pw, ph, cols, rows, label } = strip;
+    const colors = palette[label === 'B' ? 1 : 0];
+    ctx.strokeStyle = label === 'B' ? '#a5b4fc' : '#60a5fa';
+    ctx.lineWidth = 0.8;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = Math.round(c * (pw + gap) * scale);
+        const y = Math.round((sy + r * (ph + gap)) * scale);
+        const w = Math.round(pw * scale);
+        const h = Math.round(ph * scale);
+        ctx.fillStyle = colors[(r + c) % 2];
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+      }
+    }
+    // Oddeľovacia čiara medzi prúžkami
+    if (si > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, Math.round(sy * scale));
+      ctx.lineTo(canvas.width, Math.round(sy * scale));
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+
+  // Legenda
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = `${Math.max(9, Math.round(11 * scale))}px sans-serif`;
+  ctx.fillText(`${sheetW}×${sheetH} mm`, 6, Math.round(13 * scale));
+}
+</script>
+</body>
+</html>
