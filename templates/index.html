@@ -397,6 +397,22 @@
           </div>
         </div>
 
+        <!-- Povrchová úprava -->
+        <div style="margin-top:12px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <input type="checkbox" id="pPowderCoating" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+            <label for="pPowderCoating" style="cursor:pointer;font-weight:600;font-size:.9rem;">🎨 Prášková farba</label>
+          </div>
+          <div id="powderOptions" style="display:none;margin-top:6px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:.8rem;color:var(--text-muted);">Cena (€/m²)</label>
+              <input type="number" id="pPowderPrice" value="14" min="1" max="100" step="0.5"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:80px;outline:none;">
+              <span style="font-size:.78rem;color:var(--text-muted);">(obidve strany)</span>
+            </div>
+          </div>
+        </div>
+
         <button class="btn btn-primary" id="calcBtn" onclick="calculate()" disabled>
           Vypočítať cenu
         </button>
@@ -461,6 +477,10 @@
           <div class="breakdown-row" id="rDrillRow" style="display:none;border:1px solid var(--yellow);background:rgba(245,158,11,.05)">
             <span class="key">⚠️ Vŕtanie malých dier <span id="rDrillHoles" style="color:var(--yellow);font-size:.8rem"></span></span>
             <span class="val" id="rDrillCost" style="color:var(--yellow)">—</span>
+          </div>
+          <div class="breakdown-row" id="rPowderRow" style="display:none;border:1px solid rgba(139,92,246,.4);background:rgba(139,92,246,.06)">
+            <span class="key">🎨 Prášková farba <span id="rPowderArea" style="color:var(--text-muted);font-size:.8rem"></span></span>
+            <span class="val" id="rPowderCost" style="color:#a78bfa">—</span>
           </div>
           <div class="breakdown-row">
             <span class="key">Čistá hmotnosť dielu</span>
@@ -665,6 +685,12 @@
 <script>
 let geometry = null;
 let currentTab = 'dxf';
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pPowderCoating').addEventListener('change', function() {
+    document.getElementById('powderOptions').style.display = this.checked ? 'block' : 'none';
+  });
+});
 
 function toggleBboxEdit() {
   const row = document.getElementById('bboxEditRow');
@@ -882,6 +908,8 @@ async function calculate() {
     material_price_kg:     document.getElementById('pMatPrice').value || null,
     material_margin_pct:   document.getElementById('pMatMargin').value,
     scrap_factor:          document.getElementById('pScrap').value,
+    powder_coating:        document.getElementById('pPowderCoating').checked,
+    powder_coating_price:  document.getElementById('pPowderPrice').value,
     holes:                 window._aiHoles || [],
   };
 
@@ -954,6 +982,20 @@ function showResults(r, qty) {
   } else {
     document.getElementById('rDrillRow').style.display = 'none';
   }
+  // Prášková farba
+  if (r.powder_coating) {
+    document.getElementById('rPowderRow').style.display = 'flex';
+    const qFactor = r.powder_qty_factor !== 1.0
+      ? ` · koef. série ×${r.powder_qty_factor}` : '';
+    const ovenInfo = r.powder_oven_cycles > 0
+      ? ` · ${r.powder_oven_cycles} takt(y) pece (+${fmtEur(r.powder_oven_cost_total)})` : '';
+    document.getElementById('rPowderArea').textContent =
+      `(${fmt(r.powder_area_per_piece_m2,3)} m²/ks${qFactor}${ovenInfo})`;
+    document.getElementById('rPowderCost').textContent = '+' + fmtEur(r.powder_cost_per_piece);
+  } else {
+    document.getElementById('rPowderRow').style.display = 'none';
+  }
+
   document.getElementById('rWeightNet').textContent = fmt(r.weight_kg_net, 3) + ' kg';
   document.getElementById('rWeightBilled').textContent = fmt(r.weight_kg_billed, 3) + ' kg';
   document.getElementById('rScrapFactor').textContent = '(scrap ×' + r.scrap_factor + ')';

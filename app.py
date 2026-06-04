@@ -419,6 +419,11 @@ def calculate_price(geometry, params):
     mat_margin_pct = float(params.get("material_margin_pct", 20))
     scrap_factor = float(params.get("scrap_factor", 1.25))
     holes = params.get("holes", [])  # [{diameter_mm, count}, ...] z AI analýzy
+    powder_coating = bool(params.get("powder_coating", False))
+    powder_coating_price = float(params.get("powder_coating_price", 14.0))  # €/m² základ
+    powder_oven_capacity_m2 = float(params.get("powder_oven_capacity_m2", 40.0))  # m² na 1 takt pece
+    powder_oven_cost = float(params.get("powder_oven_cost", 45.0))  # € réžia za 1 takt pece
+    powder_min_order = float(params.get("powder_min_order", 45.0))  # € minimálna objednávka
 
     # Predajná cena materiálu
     mat_price_kg_sell = mat_price_kg_buy * (1 + mat_margin_pct / 100)
@@ -527,14 +532,50 @@ def calculate_price(geometry, params):
     material_cost_buy = weight_kg_billed * mat_price_kg_buy
     material_margin_eur = material_cost - material_cost_buy
 
-    # Vlastné náklady = stroj + plyn + manipulácia + materiál (nákup) + vŕtanie
-    cost_per_piece = (machine_cost_per_piece + gas_cost_per_piece +
-                      handling_surcharge + material_cost_buy + drill_cost)
+    # ── PRÁŠKOVÁ FARBA ───────────────────────────────────────────────
+    powder_area_per_piece_m2 = area_m2 * 2  # obe strany rozvinutého tvaru
+    powder_area_total_m2 = powder_area_per_piece_m2 * qty
 
-    # Predajná cena = (stroj + plyn + manipulácia) s maržou + materiál s mat.maržou + vŕtanie
+    if powder_coating:
+        # 1. Množstevný koeficient (efektivita striekania)
+        if qty == 1:
+            powder_qty_factor = 2.0
+        elif qty <= 10:
+            powder_qty_factor = 1.5
+        elif qty <= 50:
+            powder_qty_factor = 1.1
+        elif qty <= 200:
+            powder_qty_factor = 0.9
+        else:
+            powder_qty_factor = 0.75
+
+        # 2. Cena za plochu (celá séria)
+        powder_area_cost_total = powder_area_total_m2 * powder_coating_price * powder_qty_factor
+
+        # 3. Réžia pece — počet taktov × fixná réžia
+        powder_oven_cycles = math.ceil(powder_area_total_m2 / powder_oven_capacity_m2)
+        powder_oven_cost_total = powder_oven_cycles * powder_oven_cost
+
+        # 4. Celková cena lakovania
+        powder_total = powder_area_cost_total + powder_oven_cost_total
+        powder_total = max(powder_total, powder_min_order)  # minimálna objednávka
+
+        powder_cost_per_piece = powder_total / qty
+    else:
+        powder_qty_factor = 1.0
+        powder_oven_cycles = 0
+        powder_oven_cost_total = 0.0
+        powder_total = 0.0
+        powder_cost_per_piece = 0.0
+
+    # Vlastné náklady = stroj + plyn + manipulácia + materiál (nákup) + vŕtanie + prášok
+    cost_per_piece = (machine_cost_per_piece + gas_cost_per_piece +
+                      handling_surcharge + material_cost_buy + drill_cost + powder_cost_per_piece)
+
+    # Predajná cena = (stroj + plyn + manipulácia) s maržou + materiál s mat.maržou + vŕtanie + prášok
     machine_total = (machine_cost_per_piece + gas_cost_per_piece + handling_surcharge)
     machine_sell = machine_total * (1 + margin_pct / 100)
-    price_per_piece = machine_sell + material_cost + drill_cost
+    price_per_piece = machine_sell + material_cost + drill_cost + powder_cost_per_piece
     price_total = price_per_piece * qty
 
     return {
@@ -571,6 +612,15 @@ def calculate_price(geometry, params):
         # Miniatúrne diery
         "small_holes": small_holes,
         "drill_cost": round(drill_cost, 2),
+        # Prášková farba
+        "powder_coating": powder_coating,
+        "powder_area_per_piece_m2": round(powder_area_per_piece_m2, 4),
+        "powder_area_total_m2": round(powder_area_total_m2, 4),
+        "powder_qty_factor": powder_qty_factor,
+        "powder_oven_cycles": powder_oven_cycles,
+        "powder_oven_cost_total": round(powder_oven_cost_total, 2),
+        "powder_total": round(powder_total, 2),
+        "powder_cost_per_piece": round(powder_cost_per_piece, 2),
         # Celkové
         "cost_per_piece": round(cost_per_piece, 3),
         "margin_pct": margin_pct,
