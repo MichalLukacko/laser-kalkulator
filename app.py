@@ -1180,6 +1180,7 @@ def generate_quote():
     r        = data.get("result", {})
     params   = data.get("params", {})
     bending  = data.get("bending", {})
+    rolling  = data.get("rolling", {})
     company  = data.get("company", {})
     part_desc   = data.get("part_description", "Výpalok")
     quote_number = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
@@ -1198,7 +1199,7 @@ def generate_quote():
             "total_excl": "Gesamtbetrag exkl. MwSt.",
             "total_incl": "Gesamtbetrag inkl. MwSt.",
             "laser": "Laserschneiden", "material": "Material",
-            "bending": "Biegen", "powder": "Pulverbeschichtung", "drilling": "Bohren",
+            "bending": "Biegen", "powder": "Pulverbeschichtung", "drilling": "Bohren", "rolling": "Walzen",
             "conditions": "Lieferfrist - 4 Wochen\nAlle Preise sind EXW SK-Bytča\nZahlungsbedingungen - 30 Tage netto",
             "issued_by": "Ausgestellt von:", "accepted_by": "Abnahme durch:",
         },
@@ -1213,7 +1214,7 @@ def generate_quote():
             "total_excl": "Celková suma bez DPH",
             "total_incl": "Celková suma vrát. DPH",
             "laser": "Laserové rezanie", "material": "Materiál",
-            "bending": "Ohýbanie", "powder": "Prášková farba", "drilling": "Vŕtanie",
+            "bending": "Ohýbanie", "powder": "Prášková farba", "drilling": "Vŕtanie", "rolling": "Valcovanie",
             "conditions": "Dodacia lehota - 4 týždne\nVšetky ceny sú EXW SK-Bytča\nSplatnosť - 30 dní netto",
             "issued_by": "Vystavil:", "accepted_by": "Prevzal:",
         },
@@ -1224,7 +1225,7 @@ def generate_quote():
         "vat_pct":"MwSt. (%)","unit_price":"Einheitspreis zzgl. MwSt.","total_col":"Insgesamt zzgl. MwSt.",
         "total_excl":"Gesamtbetrag exkl. MwSt.","total_incl":"Gesamtbetrag inkl. MwSt.",
         "laser":"Laserschneiden","material":"Material","bending":"Biegen",
-        "powder":"Pulverbeschichtung","drilling":"Bohren",
+        "powder":"Pulverbeschichtung","drilling":"Bohren","rolling":"Walzen",
         "conditions":"Lieferfrist - 4 Wochen\nAlle Preise sind EXW SK-Bytča\nZahlungsbedingungen - 30 Tage netto",
         "issued_by":"Ausgestellt von:","accepted_by":"Abnahme durch:",
     }
@@ -1331,9 +1332,10 @@ def generate_quote():
         story.append(Spacer(1, 3*mm))
 
     # ── 3. TABUĽKA POLOŽIEK ───────────────────────────────────────────
-    laser_total = float(r.get("price_total", 0))
-    bend_total  = float(bending.get("bending_total", 0)) if bending else 0.0
-    grand_excl  = laser_total + bend_total
+    laser_total  = float(r.get("price_total", 0))
+    bend_total   = float(bending.get("bending_total", 0)) if bending else 0.0
+    roll_total   = float(rolling.get("rolling_total", 0)) if rolling else 0.0
+    grand_excl   = laser_total + bend_total + roll_total
     grand_incl  = grand_excl * (1 + vat_pct / 100)
 
     # Hlavička tabuľky
@@ -1375,6 +1377,15 @@ def generate_quote():
             qty, 'Stk', vat_pct,
             bending.get("bending_sell_per_piece", 0),
             bending.get("bending_total", 0)))
+        nr += 1
+
+    # Valcovanie
+    if rolling and rolling.get("rolling_applicable"):
+        rows.append(make_row(nr, T.get("rolling", "Walzen / Valcovanie"),
+            f'{rolling.get("roll_count",0)} Bögen · {rolling.get("unique_radii",0)}× Setup · {rolling.get("total_length_m",0)} m',
+            qty, 'Stk', vat_pct,
+            rolling.get("rolling_sell_per_piece", 0),
+            rolling.get("rolling_total", 0)))
         nr += 1
 
     # Prášková farba

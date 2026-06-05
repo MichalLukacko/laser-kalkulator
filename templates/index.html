@@ -1266,6 +1266,7 @@ async function generateQuote() {
     result: window._lastResult,
     params: window._lastParams,
     bending: window._lastBending || null,
+    rolling: window._lastRolling || null,
     part_description: document.getElementById('qPartDesc').value || window._aiPartDesc || 'Výpalok',
     quote_number: document.getElementById('qNumber').value || '',
     lang: document.getElementById('qLang').value || 'de',
