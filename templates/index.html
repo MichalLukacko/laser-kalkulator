@@ -1664,33 +1664,36 @@ async function generateBomQuote() {
   const seriesQty = window._bomSeriesQty || 1;
 
   // Zozbieraj všetky položky s cenami
+  const batchMap = {};
+  (window._bomBatchResults || []).forEach(r => { batchMap[r.pos] = r; });
+
   const items = [];
   bom.parts.forEach(p => {
-    const qty = (p.qty || 1) * seriesQty;
+    const qtyTotal = (p.qty || 1) * seriesQty;  // celkový počet ks v objednávke
     let pricePerPiece = 0;
     let total = 0;
 
     if (p.type === 'laser') {
-      // Cena z batch výpočtu (môže byť editovaná)
-      const totalEl = document.getElementById(`bomRowTotal_${p.pos}`);
-      if (totalEl) {
-        total = parseFloat(totalEl.textContent.replace(/[^\d,.]/g,'').replace(',','.')) || 0;
-        pricePerPiece = qty > 0 ? total / qty : 0;
+      const br = batchMap[p.pos];
+      if (br && br.ok) {
+        // price_per_piece = cena pre 1ks pri sériovom výrobe (qtyTotal ks)
+        pricePerPiece = br.result.price_per_piece;
+        total = br.result.price_total;  // = price_per_piece × qtyTotal
       }
     } else if (p.type === 'bought') {
       const inp = document.getElementById(`bought_${p.pos}`);
       pricePerPiece = inp ? (parseFloat(inp.value) || 0) : 0;
-      total = pricePerPiece * qty;
+      total = pricePerPiece * qtyTotal;
     }
 
     items.push({
-      pos:            p.pos,
-      name:           p.name,
-      part_number:    p.part_number || '',
-      qty:            qty,
-      type:           p.type,
+      pos:             p.pos,
+      name:            p.name,
+      part_number:     p.part_number || '',
+      qty:             qtyTotal,
+      type:            p.type,
       price_per_piece: pricePerPiece,
-      total:          total,
+      total:           total,
     });
   });
 
