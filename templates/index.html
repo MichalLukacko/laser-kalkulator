@@ -300,12 +300,31 @@
             <div style="margin-top:12px;padding:10px 14px;background:var(--surface2);border-radius:8px;font-size:.85rem;" id="bomSummary"></div>
 
             <!-- Batch kalkulácia -->
-            <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-              <button onclick="calculateBomBatch()" id="btnBomBatch"
-                style="background:var(--accent);color:white;border:none;border-radius:8px;padding:9px 20px;font-size:.88rem;font-weight:600;cursor:pointer;">
-                ⚡ Vypočítať všetky laser diely
-              </button>
-              <span style="font-size:.78rem;color:var(--text-muted);">Automaticky vypočíta cenu každého laser dielu z BOM</span>
+            <div style="margin-top:14px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);">
+              <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Počet zostáv (sérií)</label>
+                  <input type="number" id="bomQty" value="1" min="1" max="10000" step="1"
+                    style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.9rem;width:90px;outline:none;font-weight:700;">
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Sadzba lasera (€/hod)</label>
+                  <input type="number" id="bomHourly" value="80" min="10" max="500" step="5"
+                    style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:80px;outline:none;">
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Marža (%)</label>
+                  <input type="number" id="bomMargin" value="20" min="0" max="200" step="1"
+                    style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:70px;outline:none;">
+                </div>
+                <button onclick="calculateBomBatch()" id="btnBomBatch"
+                  style="background:var(--accent);color:white;border:none;border-radius:8px;padding:9px 20px;font-size:.88rem;font-weight:600;cursor:pointer;">
+                  ⚡ Vypočítať
+                </button>
+              </div>
+              <div style="font-size:.75rem;color:var(--text-muted);">
+                💡 Qty dielu = počet zostáv × qty z BOM (napr. 10 zostáv × 2ks = 20ks pre výpočet ceny/ks)
+              </div>
             </div>
 
             <!-- Výsledky batch + nakúpené -->
@@ -1482,19 +1501,28 @@ async function calculateBomBatch() {
   btn.textContent = '⏳ Počítam...';
   btn.disabled = true;
 
+  const seriesQty = parseInt(document.getElementById('bomQty').value) || 1;
+  window._bomSeriesQty = seriesQty;
+
   const params = {
-    hourly_rate:       parseFloat(document.getElementById('pHourly').value) || 80,
-    setup_time_min:    parseFloat(document.getElementById('pSetup').value) || 10,
-    margin_pct:        parseFloat(document.getElementById('pMargin').value) || 20,
-    material_margin_pct: parseFloat(document.getElementById('pMatMargin').value) || 20,
-    scrap_factor:      parseFloat(document.getElementById('pScrap').value) || 1.25,
+    hourly_rate:         parseFloat(document.getElementById('bomHourly').value) || 80,
+    setup_time_min:      10,
+    margin_pct:          parseFloat(document.getElementById('bomMargin').value) || 20,
+    material_margin_pct: 20,
+    scrap_factor:        1.25,
   };
+
+  // Qty = počet zostáv × qty z BOM
+  const partsWithQty = laserParts.map(p => ({
+    ...p,
+    qty: (p.qty || 1) * seriesQty
+  }));
 
   try {
     const res = await fetch('/calculate-bom-batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parts: laserParts, params })
+      body: JSON.stringify({ parts: partsWithQty, params })
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
@@ -1571,6 +1599,9 @@ function renderBomBatchResults(bom, results) {
   document.getElementById('bomBatchTable').innerHTML = html;
   window._bomTotals = { laser: laserTotal, bought: boughtTotal };
   updateBomGrandTotal();
+  const sq = window._bomSeriesQty || 1;
+  document.querySelector('#bomBatchResults > div:first-child').textContent =
+    `📊 Súhrnná kalkulácia zostavy — ${sq} zostáv${sq > 1 ? ' (ceny sú za celú sériu)' : ''}`;
   document.getElementById('bomBatchResults').style.display = 'block';
 }
 
@@ -1627,11 +1658,76 @@ function updateBomGrandTotal() {
 }
 
 async function generateBomQuote() {
-  if (!window._bomData || !window._bomBatchResults) {
-    alert('Najprv vypočítaj BOM.'); return;
+  if (!window._bomData) { alert('Najprv načítaj BOM.'); return; }
+
+  const bom = window._bomData;
+  const seriesQty = window._bomSeriesQty || 1;
+
+  // Zozbieraj všetky položky s cenami
+  const items = [];
+  bom.parts.forEach(p => {
+    const qty = (p.qty || 1) * seriesQty;
+    let pricePerPiece = 0;
+    let total = 0;
+
+    if (p.type === 'laser') {
+      // Cena z batch výpočtu (môže byť editovaná)
+      const totalEl = document.getElementById(`bomRowTotal_${p.pos}`);
+      if (totalEl) {
+        total = parseFloat(totalEl.textContent.replace(/[^\d,.]/g,'').replace(',','.')) || 0;
+        pricePerPiece = qty > 0 ? total / qty : 0;
+      }
+    } else if (p.type === 'bought') {
+      const inp = document.getElementById(`bought_${p.pos}`);
+      pricePerPiece = inp ? (parseFloat(inp.value) || 0) : 0;
+      total = pricePerPiece * qty;
+    }
+
+    items.push({
+      pos:            p.pos,
+      name:           p.name,
+      part_number:    p.part_number || '',
+      qty:            qty,
+      type:           p.type,
+      price_per_piece: pricePerPiece,
+      total:          total,
+    });
+  });
+
+  const btn = document.querySelector('button[onclick="generateBomQuote()"]');
+  if (btn) { btn.textContent = '⏳ Generujem...'; btn.disabled = true; }
+
+  try {
+    const res = await fetch('/generate-bom-quote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bom,
+        items,
+        series_qty:   seriesQty,
+        quote_number: document.getElementById('qNumber')?.value || '',
+        lang:         document.getElementById('qLang')?.value || 'de',
+        vat_pct:      0,
+        company: {
+          name:    document.getElementById('qCustomer')?.value || '',
+          address: document.getElementById('qAddress')?.value || '',
+          uid:     document.getElementById('qUID')?.value || '',
+        }
+      })
+    });
+    if (!res.ok) throw new Error('Chyba servera');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Preisangebot_BOM_${bom.drawing_number || 'zostava'}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Chyba: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '📄 Generovať cenovú ponuku zostavy'; btn.disabled = false; }
   }
-  // TODO: implementovať PDF export zostavy
-  alert('PDF export zostavy — bude pridaný čoskoro.');
 }
 
 function loadBomPart(index) {
