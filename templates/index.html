@@ -422,7 +422,56 @@
     <!-- Pravý stĺpec: Výsledky -->
     <div>
       <div class="card" id="results-card">
-        <h2 class="section-title">Výsledok kalkulácie</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h2 class="section-title" style="margin-bottom:0;">Výsledok kalkulácie</h2>
+          <button id="btnQuote" onclick="generateQuote()" style="display:none;background:#6366f1;color:white;border:none;border-radius:8px;padding:8px 16px;font-size:.85rem;font-weight:600;cursor:pointer;">
+            📄 Cenová ponuka PDF
+          </button>
+        </div>
+
+        <!-- Údaje pre cenovú ponuku -->
+        <div id="quoteForm" style="display:none;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);">
+          <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Údaje do ponuky (voliteľné)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Číslo ponuky</label>
+              <input type="text" id="qNumber" placeholder="napr. CP-2026-001"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Zákazník</label>
+              <input type="text" id="qCustomer" placeholder="napr. Kuhler SK s.r.o."
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Adresa zákazníka</label>
+              <input type="text" id="qAddress" placeholder="napr. Žitná 13, Žilina"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Popis dielu</label>
+              <input type="text" id="qPartDesc" placeholder="napr. Ochranný kryt"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">UID zákazníka</label>
+              <input type="text" id="qUID" placeholder="napr. CHE-100.087.792"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Referencia zákazníka</label>
+              <input type="text" id="qRef" placeholder="napr. AN2600340"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Jazyk ponuky</label>
+              <select id="qLang" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="sk">🇸🇰 Slovenčina</option>
+              </select>
+            </div>
+          </div>
+        </div>
 
         <div class="result-big">
           <div class="price" id="rPriceTotal">—</div>
@@ -593,6 +642,82 @@
       </div>
 
       <!-- Nesting kalkulátor -->
+      <!-- Valcovací modul -->
+      <div class="card" id="rollingCard" style="margin-top:20px;display:none;">
+        <h2 class="section-title">🔄 Valcovanie <span style="font-size:.75rem;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">(veľké rádiusy — plate roller)</span></h2>
+
+        <div id="rollList" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;">
+          <span style="font-size:.82rem;color:var(--text-muted);">Pridaj valcované oblúky</span>
+        </div>
+
+        <!-- Pridať oblúk -->
+        <div style="margin-bottom:14px;">
+          <button onclick="toggleAddRoll()" id="btnAddRoll"
+            style="background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:6px 14px;font-size:.82rem;color:#22d3ee;cursor:pointer;">
+            + Pridať oblúk
+          </button>
+          <div id="addRollForm" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.2);border-radius:8px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Rádius R (mm)</label>
+                <input type="number" id="newRollRadius" value="3000" min="100" max="50000" step="100"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:90px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Dĺžka oblúka (mm)</label>
+                <input type="number" id="newRollLength" value="1000" min="10" max="6000" step="10"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:90px;outline:none;">
+              </div>
+              <button onclick="addRoll()"
+                style="background:#22d3ee;color:#1a1d27;border:none;border-radius:7px;padding:7px 14px;font-size:.85rem;font-weight:600;cursor:pointer;">
+                Pridať
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;">
+          <div>
+            <label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Marža (%)</label>
+            <input type="number" id="pRollMargin" value="20" min="0" max="100" step="1"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:90px;outline:none;">
+          </div>
+          <button onclick="calculateRolling()"
+            style="background:#22d3ee;color:#1a1d27;border:none;border-radius:8px;padding:8px 18px;font-size:.88rem;font-weight:600;cursor:pointer;">
+            Vypočítať valcovanie
+          </button>
+        </div>
+
+        <div id="rollResults" style="display:none;">
+          <div class="breakdown">
+            <div class="breakdown-row">
+              <span class="key">Počet oblúkov / unikátnych R</span>
+              <span class="val" id="rRollCount">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Celková dĺžka valcovania</span>
+              <span class="val" id="rRollLength">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Cena / meter (podľa hrúbky)</span>
+              <span class="val" id="rRollPricePerM">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Setup (nastavenie valcov)</span>
+              <span class="val" id="rRollSetup">—</span>
+            </div>
+            <div class="breakdown-row total">
+              <span class="key">Valcovanie s maržou / ks</span>
+              <span class="val" id="rRollSellPerPiece">—</span>
+            </div>
+            <div class="breakdown-row" style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.3);border-radius:8px;padding:10px 12px;margin-top:8px;">
+              <span class="key" style="font-weight:700;font-size:.95rem;">💰 Celková cena s valcovaním</span>
+              <span class="val" style="font-size:1.1rem;font-weight:700;color:#22d3ee;" id="rTotalWithRolling">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card" id="nestingCard" style="margin-top:20px;display:none;">
         <h2 class="section-title">📐 Vyťaženosť tabule</h2>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
@@ -804,6 +929,7 @@ async function uploadPdf(file) {
     if (data.ai_analysis) {
       window._aiHoles = data.ai_analysis.holes || [];
       window._aiBends = data.ai_analysis.bends || [];
+      window._aiPartDesc = data.ai_analysis.part_description || '';
       showAiAnalysis(data.ai_analysis);
       // Auto-fill material and thickness from AI
       if (data.ai_analysis.material) {
@@ -925,6 +1051,8 @@ async function calculate() {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
+    window._lastResult = data.result;
+    window._lastParams = params;
     showResults(data.result, parseInt(params.quantity));
   } catch(e) {
     alert('Chyba: ' + e.message);
@@ -1008,6 +1136,19 @@ function showResults(r, qty) {
   document.getElementById('rCostPerPiece').textContent = fmtEur(r.cost_per_piece);
   document.getElementById('rMarginPct').textContent = ' ' + r.margin_pct;
   document.getElementById('rFinalPerPiece').textContent = fmtEur(r.price_per_piece);
+
+  // Zobraz tlačidlo PDF ponuky
+  document.getElementById('btnQuote').style.display = 'block';
+  document.getElementById('quoteForm').style.display = 'block';
+  // Predvyplň popis dielu ak je z AI
+  if (window._aiPartDesc && !document.getElementById('qPartDesc').value) {
+    document.getElementById('qPartDesc').value = window._aiPartDesc;
+  }
+
+  // Zobraz valcovací modul
+  document.getElementById('rollingCard').style.display = 'block';
+  if (!window._rolls) window._rolls = [];
+  renderRollList();
 
   // Zobraz nesting kalkulátor
   document.getElementById('nestingCard').style.display = 'block';
@@ -1108,11 +1249,143 @@ async function calculateBending() {
     totalEl.appendChild(totalPrice);
     totalEl.appendChild(totalNote);
 
+    window._lastBending = r;
     document.getElementById('bendResults').style.display = 'block';
   } catch(e) {
     alert('Chyba ohýbanie: ' + e.message);
   }
 }
+async function generateQuote() {
+  if (!window._lastResult) { alert('Najprv vypočítaj cenu.'); return; }
+
+  const btn = document.getElementById('btnQuote');
+  btn.textContent = '⏳ Generujem...';
+  btn.disabled = true;
+
+  const payload = {
+    result: window._lastResult,
+    params: window._lastParams,
+    bending: window._lastBending || null,
+    part_description: document.getElementById('qPartDesc').value || window._aiPartDesc || 'Výpalok',
+    quote_number: document.getElementById('qNumber').value || '',
+    lang: document.getElementById('qLang').value || 'de',
+    vat_pct: 0,
+    customer_reference: document.getElementById('qRef').value || '',
+    company: {
+      name:    document.getElementById('qCustomer').value || '',
+      address: document.getElementById('qAddress').value || '',
+      uid:     document.getElementById('qUID').value || '',
+    }
+  };
+
+  try {
+    const res = await fetch('/generate-quote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Chyba servera');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cenova_ponuka_${payload.quote_number || 'CP'}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Chyba: ' + e.message);
+  } finally {
+    btn.textContent = '📄 Cenová ponuka PDF';
+    btn.disabled = false;
+  }
+}
+
+// ── VALCOVANIE ────────────────────────────────────────────────────
+function renderRollList() {
+  const rolls = window._rolls || [];
+  const list = document.getElementById('rollList');
+  if (rolls.length === 0) {
+    list.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted);">Žiadne oblúky — pridaj manuálne</span>';
+    return;
+  }
+  list.innerHTML = rolls.map((r, i) =>
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:.82rem;display:flex;align-items:center;gap:8px;">
+      <span style="color:var(--text-muted)">Oblúk ${i+1}:</span>
+      <strong>R${r.radius_mm}mm</strong> · ${r.length_mm}mm
+      <button onclick="removeRoll(${i})"
+        style="background:rgba(239,68,68,.15);border:none;color:var(--red);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:.8rem;">✕</button>
+    </div>`
+  ).join('');
+}
+
+function toggleAddRoll() {
+  const f = document.getElementById('addRollForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+function addRoll() {
+  const radius = parseFloat(document.getElementById('newRollRadius').value) || 3000;
+  const length = parseFloat(document.getElementById('newRollLength').value) || 1000;
+  if (!window._rolls) window._rolls = [];
+  window._rolls.push({ radius_mm: radius, length_mm: length });
+  renderRollList();
+  document.getElementById('addRollForm').style.display = 'none';
+  document.getElementById('rollResults').style.display = 'none';
+}
+
+function removeRoll(index) {
+  if (!window._rolls) return;
+  window._rolls.splice(index, 1);
+  renderRollList();
+  document.getElementById('rollResults').style.display = 'none';
+}
+
+async function calculateRolling() {
+  const rolls = window._rolls || [];
+  if (!rolls.length) { alert('Pridaj aspoň 1 oblúk.'); return; }
+
+  const thickness = parseFloat(document.getElementById('pThickness').value) || 3;
+  const qty       = parseInt(document.getElementById('pQty').value) || 1;
+  const margin    = parseFloat(document.getElementById('pRollMargin').value) || 20;
+
+  try {
+    const res = await fetch('/calculate-rolling', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rolls, thickness_mm: thickness, qty, margin_pct: margin })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const r = data.result;
+
+    document.getElementById('rRollCount').textContent =
+      `${r.roll_count} oblúkov · ${r.unique_radii} unikátnych R`;
+    document.getElementById('rRollLength').textContent = `${r.total_length_m} m`;
+    document.getElementById('rRollPricePerM').textContent = fmtEur(r.price_per_m) + '/m · koef. ' + r.qty_factor;
+    document.getElementById('rRollSetup').textContent =
+      fmtEur(r.setup_total) + ' celkom → ' + fmtEur(r.setup_per_piece) + '/ks';
+    document.getElementById('rRollSellPerPiece').textContent = fmtEur(r.rolling_sell_per_piece);
+
+    const laserTotal = parseFloat(
+      document.getElementById('rPriceTotal').textContent.replace(',','.').replace(' €','')
+    );
+    const totalEl = document.getElementById('rTotalWithRolling');
+    totalEl.textContent = '';
+    const tp = document.createElement('span');
+    tp.textContent = fmtEur(laserTotal + r.rolling_total);
+    const tn = document.createElement('span');
+    tn.style.cssText = 'color:var(--text-muted);font-size:.78rem;font-weight:400';
+    tn.textContent = ` (laser ${fmtEur(laserTotal)} + valce ${fmtEur(r.rolling_total)})`;
+    totalEl.appendChild(tp);
+    totalEl.appendChild(tn);
+
+    window._lastRolling = r;
+    document.getElementById('rollResults').style.display = 'block';
+  } catch(e) {
+    alert('Chyba: ' + e.message);
+  }
+}
+
 function calculateNesting() {
   if (!geometry) return;
 

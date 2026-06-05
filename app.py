@@ -4,7 +4,7 @@ _env = dotenv_values(_os.path.join(_os.path.dirname(__file__), '.env'))
 for _k, _v in _env.items():
     _os.environ[_k] = _v
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, make_response
 import ezdxf
 import math
 import os
@@ -15,6 +15,30 @@ import json
 import anthropic
 from PIL import Image
 import fitz  # PyMuPDF — nepotrebuje poppler
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import mm
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# Registruj DejaVu fonty s Unicode podporou (slovenské znaky)
+_FONT_DIR = os.path.join(os.path.dirname(__file__), 'fonts')
+try:
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.lib.fonts import addMapping
+    pdfmetrics.registerFont(TTFont('DejaVu',     os.path.join(_FONT_DIR, 'DejaVuSans.ttf')))
+    pdfmetrics.registerFont(TTFont('DejaVu-Bold',os.path.join(_FONT_DIR, 'DejaVuSans-Bold.ttf')))
+    addMapping('DejaVu', 0, 0, 'DejaVu')
+    addMapping('DejaVu', 1, 0, 'DejaVu-Bold')
+    _PDF_FONT      = 'DejaVu'
+    _PDF_FONT_BOLD = 'DejaVu-Bold'
+except Exception:
+    _PDF_FONT      = 'Helvetica'
+    _PDF_FONT_BOLD = 'Helvetica-Bold'
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max (TIF súbory)
@@ -97,6 +121,100 @@ MATERIAL_PRICE_PER_KG = {
     "hlinik": 4.90, # AlMg3 / Al99.5, nákup bez DPH (4.70–5.10 €/kg)
     "pozink": 1.30, # DX51D+Z pozinkovaný, nákup bez DPH (1.20–1.40 €/kg)
 }
+
+# ─────────────────────────────────────────────
+#  VALCOVACÍ MODUL — plate roller (veľké rádiusy)
+#  Logika: setup fee za nastavenie valcov na rádius
+#           + cena za meter valcovanej dĺžky
+# ─────────────────────────────────────────────
+ROLLING_PARAMS = {
+    # Setup fee za 1 nastavenie valcov (1 rádius)
+    "setup_fee_per_radius_eur": 15.0,
+
+    # Cena za meter valcovanej dĺžky podľa hrúbky (€/m)
+    "price_per_meter_tiers": [
+        {"max_thickness_mm": 3,  "price": 3.0},
+        {"max_thickness_mm": 5,  "price": 4.0},
+        {"max_thickness_mm": 8,  "price": 5.5},
+        {"max_thickness_mm": 12, "price": 7.5},
+        {"max_thickness_mm": 20, "price": 12.0},
+        {"max_thickness_mm": 999,"price": 18.0},
+    ],
+
+    # Množstevný koeficient (séria = menej prestávok)
+    "qty_factor_tiers": [
+        {"max_qty": 1,    "factor": 2.0},   # prototyp — setup dominuje
+        {"max_qty": 5,    "factor": 1.5},
+        {"max_qty": 20,   "factor": 1.1},
+        {"max_qty": 9999, "factor": 0.9},
+    ],
+
+    # Minimálna cena za sériu
+    "min_order_eur": 25.0,
+}
+
+
+def calculate_rolling_price(rolls: list, thickness_mm: float, qty: int,
+                             margin_pct: float = 20.0) -> dict:
+    """
+    Vypočíta cenu valcovania.
+
+    rolls: [{"radius_mm": 3169, "length_mm": 1000}, ...]
+    thickness_mm: hrúbka materiálu
+    qty: počet kusov
+    margin_pct: marža
+
+    Každý unikátny rádius = 1 nastavenie valcov (setup fee).
+    """
+    if not rolls:
+        return {"rolling_applicable": False, "rolling_total": 0.0}
+
+    # Cena za meter podľa hrúbky
+    price_per_m = ROLLING_PARAMS["price_per_meter_tiers"][-1]["price"]
+    for tier in ROLLING_PARAMS["price_per_meter_tiers"]:
+        if thickness_mm <= tier["max_thickness_mm"]:
+            price_per_m = tier["price"]
+            break
+
+    # Množstevný koeficient
+    qty_factor = ROLLING_PARAMS["qty_factor_tiers"][-1]["factor"]
+    for tier in ROLLING_PARAMS["qty_factor_tiers"]:
+        if qty <= tier["max_qty"]:
+            qty_factor = tier["factor"]
+            break
+
+    # Počet unikátnych rádiusov = počet prestavení
+    unique_radii = len(set(r.get("radius_mm", 0) for r in rolls))
+    setup_total = unique_radii * ROLLING_PARAMS["setup_fee_per_radius_eur"]
+    setup_per_piece = setup_total / qty
+
+    # Cena valcovania per piece
+    total_length_m = sum(float(r.get("length_mm", 0)) for r in rolls) / 1000
+    rolling_cost_per_piece = total_length_m * price_per_m * qty_factor
+
+    # Celková cena netto/ks
+    rolling_net_per_piece = rolling_cost_per_piece + setup_per_piece
+
+    # S maržou
+    rolling_sell_per_piece = rolling_net_per_piece * (1 + margin_pct / 100)
+    rolling_total = rolling_sell_per_piece * qty
+    rolling_total = max(rolling_total, ROLLING_PARAMS["min_order_eur"])
+
+    return {
+        "rolling_applicable": True,
+        "roll_count": len(rolls),
+        "unique_radii": unique_radii,
+        "total_length_m": round(total_length_m, 3),
+        "price_per_m": round(price_per_m, 2),
+        "qty_factor": qty_factor,
+        "setup_total": round(setup_total, 2),
+        "setup_per_piece": round(setup_per_piece, 3),
+        "rolling_cost_per_piece": round(rolling_cost_per_piece, 3),
+        "rolling_net_per_piece": round(rolling_net_per_piece, 3),
+        "rolling_sell_per_piece": round(rolling_sell_per_piece, 2),
+        "rolling_total": round(rolling_total, 2),
+    }
+
 
 # ─────────────────────────────────────────────
 #  OHYBÁRSKY MODUL — CNC ohraňovací lis
@@ -1036,6 +1154,310 @@ def calculate_bending():
         return jsonify({"ok": True, "result": result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/calculate-rolling', methods=['POST'])
+def calculate_rolling():
+    """Vypočíta cenu valcovania."""
+    data = request.get_json()
+    rolls        = data.get("rolls", [])
+    thickness_mm = float(data.get("thickness_mm", 3))
+    qty          = int(data.get("qty", 1))
+    margin_pct   = float(data.get("margin_pct", 20.0))
+    try:
+        result = calculate_rolling_price(rolls, thickness_mm, qty, margin_pct)
+        return jsonify({"ok": True, "result": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/generate-quote', methods=['POST'])
+def generate_quote():
+    """Vygeneruje cenovú ponuku ako PDF — štýl Flowii/TecKon."""
+    import datetime
+    import time as _time
+    data = request.get_json()
+    r        = data.get("result", {})
+    params   = data.get("params", {})
+    bending  = data.get("bending", {})
+    company  = data.get("company", {})
+    part_desc   = data.get("part_description", "Výpalok")
+    quote_number = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
+    lang     = data.get("lang", "de")  # "de" alebo "sk"
+
+    # ── Texty podľa jazyka (de/sk) ────────────────────────────────────
+    T = {
+        "de": {
+            "title": "Preisangebot",
+            "customer_label": "Abnehmer:",
+            "date_label": "Ausgestellt am:",
+            "valid_label": "Gültig bis:",
+            "nr": "Nr.", "artikel": "Artikel", "menge": "Menge", "me": "ME",
+            "vat_pct": "MwSt. (%)", "unit_price": "Einheitspreis zzgl. MwSt.",
+            "total_col": "Insgesamt zzgl. MwSt.",
+            "total_excl": "Gesamtbetrag exkl. MwSt.",
+            "total_incl": "Gesamtbetrag inkl. MwSt.",
+            "laser": "Laserschneiden", "material": "Material",
+            "bending": "Biegen", "powder": "Pulverbeschichtung", "drilling": "Bohren",
+            "conditions": "Lieferfrist - 4 Wochen\nAlle Preise sind EXW SK-Bytča\nZahlungsbedingungen - 30 Tage netto",
+            "issued_by": "Ausgestellt von:", "accepted_by": "Abnahme durch:",
+        },
+        "sk": {
+            "title": "Cenová ponuka",
+            "customer_label": "Zákazník:",
+            "date_label": "Dátum:",
+            "valid_label": "Platná do:",
+            "nr": "č.", "artikel": "Položka", "menge": "Množstvo", "me": "MJ",
+            "vat_pct": "DPH (%)", "unit_price": "Jedn. cena bez DPH",
+            "total_col": "Celkom bez DPH",
+            "total_excl": "Celková suma bez DPH",
+            "total_incl": "Celková suma vrát. DPH",
+            "laser": "Laserové rezanie", "material": "Materiál",
+            "bending": "Ohýbanie", "powder": "Prášková farba", "drilling": "Vŕtanie",
+            "conditions": "Dodacia lehota - 4 týždne\nVšetky ceny sú EXW SK-Bytča\nSplatnosť - 30 dní netto",
+            "issued_by": "Vystavil:", "accepted_by": "Prevzal:",
+        },
+    }.get(lang, {})
+    if not T: T = {
+        "title":"Preisangebot","customer_label":"Abnehmer:","date_label":"Ausgestellt am:",
+        "valid_label":"Gültig bis:","nr":"Nr.","artikel":"Artikel","menge":"Menge","me":"ME",
+        "vat_pct":"MwSt. (%)","unit_price":"Einheitspreis zzgl. MwSt.","total_col":"Insgesamt zzgl. MwSt.",
+        "total_excl":"Gesamtbetrag exkl. MwSt.","total_incl":"Gesamtbetrag inkl. MwSt.",
+        "laser":"Laserschneiden","material":"Material","bending":"Biegen",
+        "powder":"Pulverbeschichtung","drilling":"Bohren",
+        "conditions":"Lieferfrist - 4 Wochen\nAlle Preise sind EXW SK-Bytča\nZahlungsbedingungen - 30 Tage netto",
+        "issued_by":"Ausgestellt von:","accepted_by":"Abnahme durch:",
+    }
+
+    # ── Farby TecKon ──────────────────────────────────────────────────
+    ORANGE    = colors.HexColor('#f97316')
+    ORANGE_BG = colors.HexColor('#fff7ed')
+    DARK      = colors.HexColor('#1c1917')
+    MUTED     = colors.HexColor('#78716c')
+    LIGHT     = colors.HexColor('#fafaf9')
+    BORDER    = colors.HexColor('#e7e5e4')
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm,
+        topMargin=15*mm, bottomMargin=20*mm)
+
+    def sty(name, **kw):
+        return ParagraphStyle(name, parent=getSampleStyleSheet()['Normal'], **kw)
+
+    s_normal = sty('N',  fontSize=9,  fontName=_PDF_FONT,      textColor=DARK,   leading=13)
+    s_small  = sty('S',  fontSize=8,  fontName=_PDF_FONT,      textColor=MUTED,  leading=11)
+    s_bold   = sty('B',  fontSize=9,  fontName=_PDF_FONT_BOLD, textColor=DARK,   leading=13)
+    s_right  = sty('R',  fontSize=9,  fontName=_PDF_FONT,      textColor=DARK,   alignment=TA_RIGHT, leading=13)
+    s_title  = sty('TT', fontSize=16, fontName=_PDF_FONT_BOLD, textColor=DARK,   alignment=TA_RIGHT, leading=20)
+    s_orange = sty('O',  fontSize=9,  fontName=_PDF_FONT_BOLD, textColor=ORANGE, alignment=TA_RIGHT)
+
+    def eur(v):
+        try:    return f'{float(v):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.') + ' €'
+        except: return '0,00 €'
+
+    qty      = int(params.get("quantity", 1))
+    today    = datetime.date.today()
+    valid_dt = today + datetime.timedelta(days=30)
+    vat_pct  = int(data.get("vat_pct", 0))
+
+    story = []
+
+    # ── 1. HLAVIČKA: logo + názov ─────────────────────────────────────
+    logo_path = os.path.join(os.path.dirname(__file__), 'logo.jpeg')
+    logo_cell = RLImage(logo_path, width=42*mm, height=16*mm, kind='proportional') \
+                if os.path.exists(logo_path) \
+                else Paragraph('<b>TecKon s.r.o.</b>', s_bold)
+
+    hdr = Table([[
+        logo_cell,
+        Paragraph(f'{T["title"]}: <b>{quote_number}</b>', s_title),
+    ]], colWidths=[80*mm, 92*mm])
+    hdr.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LINEBELOW', (0,0), (-1,0), 0.5, BORDER),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+    ]))
+    story.append(hdr)
+    story.append(Spacer(1, 5*mm))
+
+    # ── 2. ADRESA: TecKon vlavo, zákazník vpravo ──────────────────────
+    cust_name = company.get("name","")
+    cust_addr = company.get("address","")
+    cust_uid  = company.get("uid","")
+
+    teckon_txt = (
+        '<b>TecKon s.r.o.</b><br/>'
+        'Malobytčianska cesta 1486<br/>014 01 Bytča<br/>the Slovak Republic<br/><br/>'
+        'ID-Nr.:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;47183179<br/>'
+        'Steuer-ID-Nr.:&nbsp;2023819721<br/>'
+        'UID:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SK2023819721<br/>'
+        'Okr. súd Žilina, odd. Sro, vl. č. 59322/L'
+    )
+
+    cust_box_content = (
+        f'<b>{cust_name}</b><br/><br/>'
+        f'{cust_addr.replace(chr(10), "<br/>")}'
+    )
+    cust_box = Table([[Paragraph(cust_box_content, s_normal)]],
+                     colWidths=[85*mm])
+    cust_box.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.8, BORDER),
+        ('PADDING', (0,0), (-1,-1), 8),
+        ('BACKGROUND', (0,0), (-1,-1), LIGHT),
+    ]))
+
+    addr_section = Table([[
+        Paragraph(teckon_txt, s_small),
+        Table([
+            [Paragraph(T["customer_label"], s_small)],
+            [cust_box],
+            [Paragraph(f'UID: {cust_uid}' if cust_uid else '', s_small)],
+            [Spacer(1,2*mm)],
+            [Paragraph(f'{T["date_label"]} {today.strftime("%d.%m.%Y")}', s_small)],
+            [Paragraph(f'{T["valid_label"]} {valid_dt.strftime("%d.%m.%Y")}', s_small)],
+        ], colWidths=[92*mm]),
+    ]], colWidths=[75*mm, 97*mm])
+    addr_section.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+    ]))
+    story.append(addr_section)
+    story.append(Spacer(1, 5*mm))
+
+    # Referencia zákazníka
+    ref = data.get("customer_reference","")
+    if ref:
+        story.append(Paragraph(ref, s_small))
+        story.append(Spacer(1, 3*mm))
+
+    # ── 3. TABUĽKA POLOŽIEK ───────────────────────────────────────────
+    laser_total = float(r.get("price_total", 0))
+    bend_total  = float(bending.get("bending_total", 0)) if bending else 0.0
+    grand_excl  = laser_total + bend_total
+    grand_incl  = grand_excl * (1 + vat_pct / 100)
+
+    # Hlavička tabuľky
+    rows = [[
+        Paragraph(T["nr"],        sty('th', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white)),
+        Paragraph(T["artikel"],   sty('th2', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white)),
+        Paragraph(T["menge"],     sty('th3', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph(T["me"],        sty('th4', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph(T["vat_pct"],   sty('th5', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph(T["unit_price"],sty('th6', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph(T["total_col"], sty('th7', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+    ]]
+
+    def make_row(nr, name, sub, qty_val, me, vat, unit, total):
+        return [
+            Paragraph(str(nr), s_small),
+            Paragraph(f'<b>{name}</b><br/><font size="7" color="#78716c">{sub}</font>', s_normal),
+            Paragraph(str(qty_val), sty('rv', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(me,  sty('rv2', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(str(vat), sty('rv3', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(eur(unit), sty('rv4', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(eur(total), sty('rv5', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+        ]
+
+    nr = 1
+    mat_str = f'{params.get("material","").upper()} {params.get("thickness_mm","")}mm'
+
+    # Rezanie + materiál (ako 1 položka — predajná cena/ks)
+    rows.append(make_row(nr, part_desc, mat_str,
+        qty, 'Stk', vat_pct,
+        r.get("price_per_piece", 0),
+        laser_total))
+    nr += 1
+
+    # Ohýbanie
+    if bending and bending.get("bending_applicable"):
+        rows.append(make_row(nr, T["bending"],
+            f'{bending.get("bend_count",0)} Biegungen',
+            qty, 'Stk', vat_pct,
+            bending.get("bending_sell_per_piece", 0),
+            bending.get("bending_total", 0)))
+        nr += 1
+
+    # Prášková farba
+    if r.get("powder_coating"):
+        rows.append(make_row(nr, T["powder"],
+            f'{r.get("powder_area_per_piece_m2",0):.3f} m² · {r.get("powder_oven_cycles",0)} Takt(e)',
+            qty, 'Stk', vat_pct,
+            r.get("powder_cost_per_piece", 0),
+            float(r.get("powder_cost_per_piece", 0)) * qty))
+        nr += 1
+
+    # Vŕtanie
+    if r.get("drill_cost", 0) > 0:
+        rows.append(make_row(nr, T["drilling"], '',
+            qty, 'Stk', vat_pct,
+            r.get("drill_cost", 0),
+            float(r.get("drill_cost", 0)) * qty))
+        nr += 1
+
+    col_w = [10*mm, 65*mm, 18*mm, 10*mm, 13*mm, 28*mm, 28*mm]
+    tbl = Table(rows, colWidths=col_w, repeatRows=1)
+    n_data = len(rows)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND',   (0,0), (-1,0), ORANGE),
+        ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, LIGHT]),
+        ('GRID',         (0,0), (-1,-1), 0.3, BORDER),
+        ('FONTSIZE',     (0,1), (-1,-1), 8),
+        ('VALIGN',       (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING',   (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING',(0,0), (-1,-1), 4),
+        ('LEFTPADDING',  (0,0), (-1,-1), 4),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 4*mm))
+
+    # ── 4. SUMY ───────────────────────────────────────────────────────
+    sum_rows = [
+        [Paragraph(T["total_excl"], sty('sl', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+         Paragraph(eur(grand_excl), sty('sv', fontSize=9, textColor=DARK, alignment=TA_RIGHT))],
+    ]
+    if vat_pct > 0:
+        sum_rows.append([
+            Paragraph(f'MwSt. {vat_pct}%', sty('sl2', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(eur(grand_incl - grand_excl), sty('sv2', fontSize=9, textColor=DARK, alignment=TA_RIGHT)),
+        ])
+    sum_rows.append([
+        Paragraph(f'<b>{T["total_incl"]}</b>', sty('sl3', fontSize=10, fontName=_PDF_FONT_BOLD, textColor=DARK, alignment=TA_RIGHT)),
+        Paragraph(f'<b>{eur(grand_incl)}</b>', sty('sv3', fontSize=10, fontName=_PDF_FONT_BOLD, textColor=DARK, alignment=TA_RIGHT)),
+    ])
+
+    sum_tbl = Table(sum_rows, colWidths=[130*mm, 42*mm])
+    sum_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, len(sum_rows)-1), (-1, len(sum_rows)-1), ORANGE_BG),
+        ('LINEABOVE',  (0, len(sum_rows)-1), (-1, len(sum_rows)-1), 1, ORANGE),
+        ('TOPPADDING',    (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('RIGHTPADDING',  (0,0), (-1,-1), 4),
+    ]))
+    story.append(sum_tbl)
+    story.append(Spacer(1, 6*mm))
+
+    # ── 5. PODMIENKY ──────────────────────────────────────────────────
+    conditions = data.get("conditions", T["conditions"])
+    for line in conditions.split('\n'):
+        story.append(Paragraph(line, s_small))
+    story.append(Spacer(1, 10*mm))
+
+    # ── 6. PODPISY ────────────────────────────────────────────────────
+    sig_tbl = Table([[
+        Paragraph(f'<b>{T["issued_by"]}</b><br/><br/>'
+                  'Michal Lukačko<br/>michal.lukacko@teckon.sk<br/>0910 216 123', s_small),
+        Paragraph(f'<b>{T["accepted_by"]}</b>', s_small),
+    ]], colWidths=[85*mm, 87*mm])
+    sig_tbl.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
+    story.append(sig_tbl)
+
+    doc.build(story)
+    pdf_bytes = buf.getvalue()
+
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename="Preisangebot_{quote_number}.pdf"'
+    return response
 
 
 if __name__ == '__main__':
