@@ -259,6 +259,9 @@
           <button class="tab-btn" id="tabPdf" onclick="switchTab('pdf')">
             🤖 PDF / Obrázok <span class="tag" style="background:rgba(34,197,94,.15);color:#22c55e;">AI</span>
           </button>
+          <button class="tab-btn" id="tabBom" onclick="switchTab('bom')">
+            📋 Zostava / BOM <span class="tag" style="background:rgba(99,102,241,.15);color:#818cf8;">AI</span>
+          </button>
         </div>
 
         <!-- DXF zóna -->
@@ -278,6 +281,23 @@
             <div class="label">Presuň PDF / PNG / TIF výkres sem<br>alebo <span>klikni pre výber</span><br>
               <small style="color:var(--text-muted);font-size:.75rem;">Claude AI automaticky rozpozná rozmery, materiál a vypočíta rozvin</small>
             </div>
+          </div>
+        </div>
+
+        <!-- BOM zóna -->
+        <div id="zoneBom" style="display:none;">
+          <div class="drop-zone" id="dropZoneBom">
+            <input type="file" id="fileInputBom" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp">
+            <div class="icon">📋</div>
+            <div class="label">Presuň výkres zostavy / BOM sem<br>alebo <span>klikni pre výber</span><br>
+              <small style="color:var(--text-muted);font-size:.75rem;">Claude AI prečíta BOM tabuľku a rozpozná všetky diely</small>
+            </div>
+          </div>
+          <!-- BOM tabuľka výsledkov -->
+          <div id="bomResults" style="display:none;margin-top:14px;">
+            <div style="font-size:.88rem;font-weight:600;color:var(--text-muted);margin-bottom:8px;" id="bomTitle"></div>
+            <div id="bomTable"></div>
+            <div style="margin-top:12px;padding:10px 14px;background:var(--surface2);border-radius:8px;font-size:.85rem;" id="bomSummary"></div>
           </div>
         </div>
 
@@ -845,11 +865,13 @@ function applyBboxEdit() {
 
 function switchTab(tab) {
   currentTab = tab;
-  document.getElementById('zoneDxf').style.display = tab === 'dxf' ? 'block' : 'none';
-  document.getElementById('zonePdf').style.display = tab === 'pdf' ? 'block' : 'none';
+  document.getElementById('zoneDxf').style.display  = tab === 'dxf'  ? 'block' : 'none';
+  document.getElementById('zonePdf').style.display  = tab === 'pdf'  ? 'block' : 'none';
+  document.getElementById('zoneBom').style.display  = tab === 'bom'  ? 'block' : 'none';
   document.getElementById('tabDxf').classList.toggle('active', tab === 'dxf');
   document.getElementById('tabPdf').classList.toggle('active', tab === 'pdf');
-  // Reset stavu
+  document.getElementById('tabBom').classList.toggle('active', tab === 'bom');
+  // Reset
   document.getElementById('uploadStatus').className = 'status';
   document.getElementById('geoResult').style.display = 'none';
   document.getElementById('aiAnalysis').style.display = 'none';
@@ -881,6 +903,19 @@ dzPdf.addEventListener('drop', e => {
 });
 document.getElementById('fileInputPdf').addEventListener('change', e => {
   if (e.target.files[0]) uploadPdf(e.target.files[0]);
+});
+
+// ── Drag & drop BOM ──────────────────────────────
+const dzBom = document.getElementById('dropZoneBom');
+dzBom.addEventListener('dragover', e => { e.preventDefault(); dzBom.classList.add('drag-over'); });
+dzBom.addEventListener('dragleave', () => dzBom.classList.remove('drag-over'));
+dzBom.addEventListener('drop', e => {
+  e.preventDefault(); dzBom.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) uploadBom(f);
+});
+document.getElementById('fileInputBom').addEventListener('change', e => {
+  if (e.target.files[0]) uploadBom(e.target.files[0]);
 });
 
 function setStatus(id, type, msg) {
@@ -1299,6 +1334,138 @@ async function generateQuote() {
     btn.textContent = '📄 Cenová ponuka PDF';
     btn.disabled = false;
   }
+}
+
+// ── BOM / ZOSTAVA ────────────────────────────────────────────────
+async function uploadBom(file) {
+  setStatus('uploadStatus', 'loading', '<span class="spinner"></span>🤖 Claude číta BOM tabuľku... (10–20s)');
+  document.getElementById('bomResults').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/upload-bom', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    window._bomData = data.bom;
+    setStatus('uploadStatus', 'ok', `✓ ${file.name} — BOM načítaný (${data.bom.parts.length} dielov)`);
+    renderBomTable(data.bom);
+  } catch(e) {
+    setStatus('uploadStatus', 'err', '✗ Chyba: ' + e.message);
+  }
+}
+
+function renderBomTable(bom) {
+  const el = document.getElementById('bomResults');
+  const title = document.getElementById('bomTitle');
+  const tableEl = document.getElementById('bomTable');
+  const summary = document.getElementById('bomSummary');
+
+  title.textContent = `${bom.assembly_name || 'Zostava'} · ${bom.drawing_number || ''} · Hmotnosť: ${bom.total_mass_kg || '?'} kg`;
+
+  const typeColors = {
+    laser:  'rgba(59,130,246,.15)',
+    bought: 'rgba(34,197,94,.12)',
+    weld:   'rgba(245,158,11,.12)',
+    other:  'rgba(100,116,139,.12)',
+  };
+  const typeLabels = {
+    laser: '⚡ laser', bought: '🛒 nakúp', weld: '🔥 zváranie', other: '•'
+  };
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+    <thead>
+      <tr style="background:var(--surface2);color:var(--text-muted);">
+        <th style="padding:6px 8px;text-align:left;">Pos</th>
+        <th style="padding:6px 8px;text-align:left;">Názov</th>
+        <th style="padding:6px 8px;text-align:center;">Qty</th>
+        <th style="padding:6px 8px;text-align:left;">Materiál</th>
+        <th style="padding:6px 8px;text-align:left;">Rozmery</th>
+        <th style="padding:6px 8px;text-align:right;">kg/ks</th>
+        <th style="padding:6px 8px;text-align:center;">Typ</th>
+        <th style="padding:6px 8px;text-align:center;">Akcia</th>
+      </tr>
+    </thead><tbody>`;
+
+  bom.parts.forEach((p, i) => {
+    const bg = typeColors[p.type] || typeColors.other;
+    const label = typeLabels[p.type] || p.type;
+    html += `<tr style="background:${bg};border-bottom:1px solid var(--border);">
+      <td style="padding:5px 8px;font-weight:600;">${p.pos}</td>
+      <td style="padding:5px 8px;">${p.name}<br><span style="color:var(--text-muted);font-size:.75rem;">${p.part_number || ''}</span></td>
+      <td style="padding:5px 8px;text-align:center;">${p.qty}</td>
+      <td style="padding:5px 8px;font-size:.78rem;">${p.material || '—'}</td>
+      <td style="padding:5px 8px;font-size:.78rem;">${p.dimensions || '—'}</td>
+      <td style="padding:5px 8px;text-align:right;">${p.mass_per_piece_kg != null ? p.mass_per_piece_kg : '—'}</td>
+      <td style="padding:5px 8px;text-align:center;font-size:.75rem;">${label}</td>
+      <td style="padding:5px 8px;text-align:center;">
+        ${p.type === 'laser'
+          ? `<button onclick="loadBomPart(${i})"
+               style="background:var(--accent);color:white;border:none;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer;">
+               Kalkulovať
+             </button>`
+          : '<span style="color:var(--text-muted);font-size:.75rem;">—</span>'
+        }
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  tableEl.innerHTML = html;
+
+  const laserParts = bom.parts.filter(p => p.type === 'laser');
+  const boughtParts = bom.parts.filter(p => p.type === 'bought');
+  summary.innerHTML = `
+    <span style="color:var(--accent);">⚡ ${laserParts.length} laser dielov</span> &nbsp;·&nbsp;
+    <span style="color:var(--green);">🛒 ${boughtParts.length} nakúpených</span> &nbsp;·&nbsp;
+    <span style="color:var(--text-muted);">Celková hmotnosť: ${bom.total_mass_kg || '?'} kg</span>
+    <br><small style="color:var(--text-muted);">Klikni "Kalkulovať" pri každom laserovom diele → vyplní parametre automaticky</small>
+  `;
+  el.style.display = 'block';
+}
+
+function loadBomPart(index) {
+  const bom = window._bomData;
+  if (!bom) return;
+  const p = bom.parts[index];
+
+  // Prepni na PDF tab a vyplň parametre
+  switchTab('pdf');
+
+  // Vyplň materiál
+  const matMap = {
+    's235': 'ocel', 's355': 'ocel', 'dc01': 'ocel', 'dc04': 'ocel',
+    '1.4301': 'nerez', '1.4307': 'nerez', 'x5crni': 'nerez', 'aisi 304': 'nerez',
+    'almg': 'hlinik', 'al99': 'hlinik', 'en aw': 'hlinik',
+    'dx51': 'pozink', 'z275': 'pozink',
+  };
+  const matStr = (p.material || '').toLowerCase();
+  let mat = 'ocel';
+  for (const [key, val] of Object.entries(matMap)) {
+    if (matStr.includes(key)) { mat = val; break; }
+  }
+  document.getElementById('pMaterial').value = mat;
+
+  // Vyplň hrúbku z rozmerov (napr. "8x1669x60" → 8mm)
+  const dims = (p.dimensions || '').replace(/[^0-9x.]/gi, '');
+  const parts = dims.split(/x/i).map(Number).filter(v => v > 0);
+  if (parts.length >= 1) {
+    const thickness = Math.min(...parts); // najmenší rozmer = hrúbka
+    document.getElementById('pThickness').value = thickness;
+  }
+
+  // Vyplň qty
+  document.getElementById('pQty').value = p.qty || 1;
+
+  // Predvyplň popis pre PDF ponuku
+  window._aiPartDesc = `${p.name}${p.part_number ? ' (' + p.part_number + ')' : ''}`;
+  if (document.getElementById('qPartDesc'))
+    document.getElementById('qPartDesc').value = window._aiPartDesc;
+
+  setStatus('uploadStatus', 'ok',
+    `✓ Načítaný diel: ${p.name} — uprav parametre a vypočítaj cenu`);
 }
 
 // ── VALCOVANIE ────────────────────────────────────────────────────

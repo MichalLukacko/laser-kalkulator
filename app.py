@@ -814,6 +814,43 @@ def upload_dxf():
         os.unlink(tmp_path)
 
 
+BOM_PROMPT = """Si expert na strojárenské výkresy a technickú dokumentáciu. Analyzuj priloženú výkresovú dokumentáciu zostavy a extrahuj BOM (Bill of Materials / zoznam dielov).
+
+Vráť VÝLUČNE JSON objekt (žiadny iný text) v tomto formáte:
+{
+  "assembly_name": "<názov zostavy>",
+  "drawing_number": "<číslo výkresu>",
+  "total_mass_kg": <celková hmotnosť v kg alebo null>,
+  "parts": [
+    {
+      "pos": <číslo pozície>,
+      "part_number": "<číslo dielu>",
+      "name": "<názov dielu>",
+      "qty": <počet kusov>,
+      "material": "<materiál>",
+      "dimensions": "<rozmery napr. 460x318x10 alebo Ø30x25>",
+      "mass_per_piece_kg": <hmotnosť 1ks v kg alebo null>,
+      "total_mass_kg": <celková hmotnosť v kg alebo null>,
+      "type": "laser|bought|weld|other",
+      "remarks": "<poznámky>"
+    }
+  ]
+}
+
+PRAVIDLÁ pre pole "type":
+- "laser" = plechový diel ktorý treba vyrezať laserom (plech, oceľ, nerez, hliník)
+- "bought" = nakúpený normalizovaný diel (skrutky, matice, podložky, pružiny, ložiská, profily)
+- "weld" = zvarovaná zostava
+- "other" = iné
+
+KRITICKÉ:
+- Prečítaj CELÚ BOM tabuľku z výkresu — všetky riadky!
+- Rozmery zapisuj presne ako sú v tabuľke (napr. "8x1669x60" = hrúbka x šírka x dĺžka)
+- Ak materiál obsahuje EN normu (napr. "EN 10025-2 / 1.0577 / S355J2"), zaznamenej celý reťazec
+- Hmotnosti zapisuj v kg (nie g)
+- Ak niečo nie je jasné, daj null"""
+
+
 VISION_PROMPT = """Si expert na strojárenské výkresy a výrobu z plechu. Analyzuj priložený technický výkres a extrahuj VŠETKY potrebné informácie pre kalkuláciu ceny laserového rezania.
 
 Vráť VÝLUČNE JSON objekt (žiadny iný text) v tomto formáte:
@@ -1122,6 +1159,94 @@ def upload_pdf():
                     os.unlink(p)
                 except Exception:
                     pass
+
+
+@app.route('/upload-bom', methods=['POST'])
+def upload_bom():
+    """Nahrá výkres zostavy, Claude extrahuje BOM tabuľku."""
+    if 'file' not in request.files:
+        return jsonify({"error": "Žiadny súbor"}), 400
+
+    f = request.files['file']
+    fname = f.filename.lower()
+    allowed = ('.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp')
+    if not any(fname.endswith(ext) for ext in allowed):
+        return jsonify({"error": "Podporované: PDF, PNG, JPG, TIF"}), 400
+
+    tmp_img_path = None
+    tmp_orig_path = None
+    try:
+        suffix = os.path.splitext(fname)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            f.save(tmp.name)
+            tmp_orig_path = tmp.name
+
+        # Konvertuj na PNG
+        if fname.endswith('.pdf'):
+            doc = fitz.open(tmp_orig_path)
+            page = doc[0]
+            mat = fitz.Matrix(200/72, 200/72)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as ti:
+                pix.save(ti.name)
+                tmp_img_path = ti.name
+            doc.close()
+        elif fname.endswith(('.tif', '.tiff')):
+            Image.MAX_IMAGE_PIXELS = None
+            img = Image.open(tmp_orig_path)
+            try: img.seek(0)
+            except: pass
+            if img.mode not in ('RGB', 'L'): img = img.convert('RGB')
+            w_i, h_i = img.size
+            if max(w_i, h_i) > 3000:
+                scale = 3000 / max(w_i, h_i)
+                img = img.resize((int(w_i*scale), int(h_i*scale)), Image.LANCZOS)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as ti:
+                img.save(ti.name, 'PNG')
+                tmp_img_path = ti.name
+        else:
+            tmp_img_path = tmp_orig_path
+
+        # Pošli do Claude s BOM promptom
+        client = anthropic.Anthropic()
+        img_b64, media_type = image_to_base64(tmp_img_path)
+        message = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64",
+                        "media_type": media_type, "data": img_b64}},
+                    {"type": "text", "text": BOM_PROMPT}
+                ]
+            }]
+        )
+        raw = message.content[0].text.strip()
+        # Vyčisti JSON
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"): raw = raw[4:]
+        raw = raw.strip()
+        bom_data = json.loads(raw)
+
+        print("=== BOM VÝSLEDOK ===")
+        print(json.dumps(bom_data, indent=2, ensure_ascii=False))
+        print("===================")
+
+        return jsonify({"ok": True, "bom": bom_data})
+
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"Claude nevrátil validný JSON: {str(e)}"}), 500
+    except anthropic.APIError as e:
+        return jsonify({"error": f"Claude API chyba: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
+    finally:
+        for p in [tmp_orig_path, tmp_img_path]:
+            if p and os.path.exists(p):
+                try: os.unlink(p)
+                except: pass
 
 
 @app.route('/calculate', methods=['POST'])
