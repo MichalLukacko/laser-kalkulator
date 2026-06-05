@@ -536,6 +536,7 @@ def calculate_price(geometry, params):
     mat_price_kg_buy = float(params.get("material_price_kg") or MATERIAL_PRICE_PER_KG.get(mat, 1.0))
     mat_margin_pct = float(params.get("material_margin_pct", 20))
     scrap_factor = float(params.get("scrap_factor", 1.25))
+    shape_factor = float(params.get("shape_factor", 1.0))  # korekcia plochy pre zložité tvary
     holes = params.get("holes", [])  # [{diameter_mm, count}, ...] z AI analýzy
     powder_coating = bool(params.get("powder_coating", False))
     powder_coating_price = float(params.get("powder_coating_price", 14.0))  # €/m² základ
@@ -634,15 +635,17 @@ def calculate_price(geometry, params):
     # Príplatok za manipuláciu = rozdiel oproti normálnym nákladom
     handling_surcharge = machine_cost_per_piece * (handling_factor - 1.0)
 
-    # Materiál — čistá hmotnosť dielu (bbox + nesting gap)
+    # Materiál — hmotnosti
     density = MATERIAL_DENSITY.get(mat, 7850)
     thickness_m = t / 1000
-    volume_m3 = area_m2 * thickness_m
-    weight_kg_net = volume_m3 * density           # čistá hmotnosť (diel + medzera)
 
-    # Scrap factor: účtujeme zákazníkovi podiel skeletu (odpadu)
-    # Štandard: 1.25 (25% odpad), zložité tvary: 1.35
-    weight_kg_billed = weight_kg_net * scrap_factor
+    # Čistá hmotnosť = iba samotný diel × shape_factor (korekcia pre zložité tvary)
+    area_m2_pure = (bbox_w * bbox_h) / 1e6 * shape_factor
+    weight_kg_net = area_m2_pure * thickness_m * density
+
+    # Billed hmotnosť = s nesting medzerou + scrap faktor (pre výpočet ceny materiálu)
+    # shape_factor sa aplikuje aj na materiálové náklady
+    weight_kg_billed = area_m2 * shape_factor * thickness_m * density * scrap_factor
 
     # Náklady materiálu = billed hmotnosť × predajná cena (s maržou na materiál)
     material_cost = weight_kg_billed * mat_price_kg_sell
@@ -713,6 +716,7 @@ def calculate_price(geometry, params):
         "weight_kg_net": round(weight_kg_net, 3),
         "weight_kg_billed": round(weight_kg_billed, 3),
         "scrap_factor": scrap_factor,
+        "shape_factor": shape_factor,
         "mat_price_kg_buy": round(mat_price_kg_buy, 3),
         "mat_price_kg_sell": round(mat_price_kg_sell, 3),
         "mat_margin_pct": mat_margin_pct,
@@ -1247,6 +1251,117 @@ def upload_bom():
             if p and os.path.exists(p):
                 try: os.unlink(p)
                 except: pass
+
+
+def parse_dimensions(dim_str: str, material: str = "ocel") -> dict:
+    """
+    Parsuje reťazec rozmerov z BOM tabuľky na geometry dict.
+    Príklady: "460x318x10", "8x1669x60", "Ø30x25", "1669x60x8"
+    Vracia: {bbox_width_mm, bbox_height_mm, cut_length_mm, pierce_count, thickness_mm}
+    """
+    import re
+    dim_str = dim_str.strip().upper()
+
+    # Kruhový prierez: Ø30x25 alebo D30x25
+    circ = re.match(r'[ØDO](\d+\.?\d*)[Xx](\d+\.?\d*)', dim_str)
+    if circ:
+        d = float(circ.group(1))
+        length = float(circ.group(2))
+        cut_length = math.pi * d + 2 * length
+        return {
+            "bbox_width_mm": d, "bbox_height_mm": length,
+            "cut_length_mm": round(cut_length, 1),
+            "pierce_count": 1, "thickness_mm": d,
+        }
+
+    # Extrahuj čísla z reťazca
+    nums = [float(x) for x in re.findall(r'\d+\.?\d*', dim_str) if float(x) > 0]
+    if not nums:
+        return {"bbox_width_mm": 100, "bbox_height_mm": 100,
+                "cut_length_mm": 400, "pierce_count": 1, "thickness_mm": 2}
+
+    if len(nums) == 1:
+        # Len jedna hodnota — predpokladaj štvorec
+        return {"bbox_width_mm": nums[0], "bbox_height_mm": nums[0],
+                "cut_length_mm": 4 * nums[0], "pierce_count": 1, "thickness_mm": nums[0]}
+
+    if len(nums) == 2:
+        # Dva rozmery — hrúbka nie je jasná, predpokladaj štandardnú
+        w, h = sorted(nums, reverse=True)
+        t = 2.0
+        cut = 2 * (w + h)
+        return {"bbox_width_mm": w, "bbox_height_mm": h,
+                "cut_length_mm": round(cut, 1), "pierce_count": 1, "thickness_mm": t}
+
+    # Tri rozmery: najmenší = hrúbka, zvyšné = rozmery polotovaru
+    nums_sorted = sorted(nums)
+    t = nums_sorted[0]
+    dims = sorted(nums_sorted[1:], reverse=True)
+    w, h = dims[0], dims[1] if len(dims) > 1 else dims[0]
+    cut = 2 * (w + h)
+    return {
+        "bbox_width_mm": w, "bbox_height_mm": h,
+        "cut_length_mm": round(cut, 1),
+        "pierce_count": 1, "thickness_mm": t,
+    }
+
+
+@app.route('/calculate-bom-batch', methods=['POST'])
+def calculate_bom_batch():
+    """Batch kalkulácia pre všetky laser diely z BOM."""
+    data = request.get_json()
+    parts = data.get("parts", [])        # laser diely z BOM
+    default_params = data.get("params", {})  # spoločné parametre (hourly_rate, margin...)
+
+    results = []
+    for p in parts:
+        try:
+            dim_str   = p.get("dimensions", "")
+            mat_str   = (p.get("material", "")).lower()
+            qty       = int(p.get("qty", 1))
+
+            # Zisti materiál
+            mat = "ocel"
+            for key, val in [("1.4301","nerez"),("1.4307","nerez"),("x5crni","nerez"),
+                              ("almg","hlinik"),("al99","hlinik"),("en aw","hlinik"),
+                              ("dx51","pozink"),("s235","ocel"),("s355","ocel"),
+                              ("dc01","ocel"),("dc04","ocel")]:
+                if key in mat_str:
+                    mat = val
+                    break
+
+            # Parsuj rozmery
+            geo = parse_dimensions(dim_str, mat)
+            t   = geo["thickness_mm"]
+
+            # Zostav parametre
+            params = {
+                "material":          mat,
+                "thickness_mm":      t,
+                "quantity":          qty,
+                "hourly_rate":       float(default_params.get("hourly_rate", 80)),
+                "setup_time_min":    float(default_params.get("setup_time_min", 10)),
+                "margin_pct":        float(default_params.get("margin_pct", 20)),
+                "material_margin_pct": float(default_params.get("material_margin_pct", 20)),
+                "scrap_factor":      float(default_params.get("scrap_factor", 1.25)),
+                "shape_factor":      1.0,
+                "holes":             [],
+                "powder_coating":    False,
+            }
+
+            result = calculate_price(geo, params)
+            results.append({
+                "pos":           p.get("pos"),
+                "ok":            True,
+                "material":      mat,
+                "thickness_mm":  t,
+                "dimensions":    dim_str,
+                "result":        result,
+            })
+        except Exception as e:
+            results.append({"pos": p.get("pos"), "ok": False, "error": str(e)})
+
+    return jsonify({"ok": True, "results": results})
 
 
 @app.route('/calculate', methods=['POST'])

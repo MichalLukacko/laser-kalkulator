@@ -298,6 +298,41 @@
             <div style="font-size:.88rem;font-weight:600;color:var(--text-muted);margin-bottom:8px;" id="bomTitle"></div>
             <div id="bomTable"></div>
             <div style="margin-top:12px;padding:10px 14px;background:var(--surface2);border-radius:8px;font-size:.85rem;" id="bomSummary"></div>
+
+            <!-- Batch kalkulácia -->
+            <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <button onclick="calculateBomBatch()" id="btnBomBatch"
+                style="background:var(--accent);color:white;border:none;border-radius:8px;padding:9px 20px;font-size:.88rem;font-weight:600;cursor:pointer;">
+                ⚡ Vypočítať všetky laser diely
+              </button>
+              <span style="font-size:.78rem;color:var(--text-muted);">Automaticky vypočíta cenu každého laser dielu z BOM</span>
+            </div>
+
+            <!-- Výsledky batch + nakúpené -->
+            <div id="bomBatchResults" style="display:none;margin-top:16px;">
+              <div style="font-size:.88rem;font-weight:600;color:var(--text-muted);margin-bottom:8px;">📊 Súhrnná kalkulácia zostavy</div>
+              <div id="bomBatchTable"></div>
+
+              <!-- Celková suma -->
+              <div style="margin-top:12px;padding:14px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);border-radius:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                  <span style="font-size:.88rem;color:var(--text-muted);">Výroba celkom (laser diely)</span>
+                  <span style="font-weight:700;" id="bomLaserTotal">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                  <span style="font-size:.88rem;color:var(--text-muted);">Nakúpený materiál celkom</span>
+                  <span style="font-weight:700;" id="bomBoughtTotal">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border);">
+                  <span style="font-size:1rem;font-weight:700;">💰 ZOSTAVA CELKOM</span>
+                  <span style="font-size:1.2rem;font-weight:800;color:var(--accent);" id="bomGrandTotal">—</span>
+                </div>
+              </div>
+
+              <button onclick="generateBomQuote()" style="margin-top:12px;background:#6366f1;color:white;border:none;border-radius:8px;padding:9px 20px;font-size:.88rem;font-weight:600;cursor:pointer;">
+                📄 Generovať cenovú ponuku zostavy
+              </button>
+            </div>
           </div>
         </div>
 
@@ -415,6 +450,14 @@
             <input type="number" id="pScrap" value="1.25" min="1.0" max="2.0" step="0.05"
               title="1.25 = 25% odpad (štandard), 1.35 = zložité tvary">
           </div>
+          <div class="form-group">
+            <label>Korekcia tvaru <span style="color:var(--text-muted);font-size:.78rem;">(fill faktor)</span></label>
+            <input type="number" id="pShapeFactor" value="1.0" min="0.3" max="1.0" step="0.05"
+              title="1.0 = obdĺžnik (štandard), 0.65 = bowtie/hourglass, 0.5 = trojuholník">
+          </div>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:4px;padding:0 2px;">
+          💡 Fill faktor: 1.0 = obdĺžnik · 0.78 = kruh · 0.65 = bowtie · 0.5 = trojuholník
         </div>
 
         <!-- Povrchová úprava -->
@@ -1069,6 +1112,7 @@ async function calculate() {
     material_price_kg:     document.getElementById('pMatPrice').value || null,
     material_margin_pct:   document.getElementById('pMatMargin').value,
     scrap_factor:          document.getElementById('pScrap').value,
+    shape_factor:          document.getElementById('pShapeFactor').value,
     powder_coating:        document.getElementById('pPowderCoating').checked,
     powder_coating_price:  document.getElementById('pPowderPrice').value,
     holes:                 window._aiHoles || [],
@@ -1159,7 +1203,8 @@ function showResults(r, qty) {
     document.getElementById('rPowderRow').style.display = 'none';
   }
 
-  document.getElementById('rWeightNet').textContent = fmt(r.weight_kg_net, 3) + ' kg';
+  const shapeNote = r.shape_factor < 1.0 ? ` (fill ×${r.shape_factor})` : '';
+  document.getElementById('rWeightNet').textContent = fmt(r.weight_kg_net, 3) + ' kg' + shapeNote;
   document.getElementById('rWeightBilled').textContent = fmt(r.weight_kg_billed, 3) + ' kg';
   document.getElementById('rScrapFactor').textContent = '(scrap ×' + r.scrap_factor + ')';
   document.getElementById('rMatCostBuy').textContent = fmtEur(r.material_cost_buy) + '  (' + fmt(r.mat_price_kg_buy,2) + ' €/kg)';
@@ -1424,6 +1469,169 @@ function renderBomTable(bom) {
     <br><small style="color:var(--text-muted);">Klikni "Kalkulovať" pri každom laserovom diele → vyplní parametre automaticky</small>
   `;
   el.style.display = 'block';
+}
+
+async function calculateBomBatch() {
+  const bom = window._bomData;
+  if (!bom) return;
+
+  const laserParts = bom.parts.filter(p => p.type === 'laser');
+  if (!laserParts.length) { alert('Žiadne laser diely v BOM.'); return; }
+
+  const btn = document.getElementById('btnBomBatch');
+  btn.textContent = '⏳ Počítam...';
+  btn.disabled = true;
+
+  const params = {
+    hourly_rate:       parseFloat(document.getElementById('pHourly').value) || 80,
+    setup_time_min:    parseFloat(document.getElementById('pSetup').value) || 10,
+    margin_pct:        parseFloat(document.getElementById('pMargin').value) || 20,
+    material_margin_pct: parseFloat(document.getElementById('pMatMargin').value) || 20,
+    scrap_factor:      parseFloat(document.getElementById('pScrap').value) || 1.25,
+  };
+
+  try {
+    const res = await fetch('/calculate-bom-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts: laserParts, params })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    window._bomBatchResults = data.results;
+    renderBomBatchResults(bom, data.results);
+  } catch(e) {
+    alert('Chyba: ' + e.message);
+  } finally {
+    btn.textContent = '⚡ Vypočítať všetky laser diely';
+    btn.disabled = false;
+  }
+}
+
+function renderBomBatchResults(bom, results) {
+  const resultMap = {};
+  results.forEach(r => { resultMap[r.pos] = r; });
+
+  let laserTotal = 0;
+  let boughtTotal = 0;
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+    <thead><tr style="background:var(--surface2);color:var(--text-muted);">
+      <th style="padding:6px 8px;text-align:left;">Pos</th>
+      <th style="padding:6px 8px;text-align:left;">Názov</th>
+      <th style="padding:6px 8px;text-align:center;">Qty</th>
+      <th style="padding:6px 8px;text-align:right;">Cena/ks</th>
+      <th style="padding:6px 8px;text-align:right;">Celkom</th>
+      <th style="padding:6px 8px;text-align:center;">Upraviť</th>
+    </tr></thead><tbody>`;
+
+  bom.parts.forEach(p => {
+    const r = resultMap[p.pos];
+    let pricePerPiece = 0;
+    let rowBg = 'transparent';
+    let priceCell = '';
+    let totalCell = '';
+    let editCell = '';
+
+    if (p.type === 'laser' && r && r.ok) {
+      pricePerPiece = r.result.price_per_piece;
+      const total = pricePerPiece * p.qty;
+      laserTotal += total;
+      rowBg = 'rgba(59,130,246,.07)';
+      priceCell = `<span style="color:var(--accent);font-weight:600;">${fmtEur(pricePerPiece)}</span>`;
+      totalCell = `<span style="font-weight:700;">${fmtEur(total)}</span>`;
+      editCell = `<input type="number" value="${pricePerPiece.toFixed(2)}" min="0" step="0.01"
+        onchange="updateBomPrice(${p.pos}, this.value, ${p.qty})"
+        style="width:75px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 5px;font-size:.8rem;text-align:right;">`;
+    } else if (p.type === 'bought') {
+      rowBg = 'rgba(34,197,94,.05)';
+      priceCell = `<input type="number" placeholder="0.00" min="0" step="0.01" id="bought_${p.pos}"
+        onchange="updateBomBought(${p.pos}, this.value, ${p.qty})"
+        style="width:75px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 5px;font-size:.8rem;text-align:right;">`;
+      totalCell = `<span id="boughtTotal_${p.pos}" style="color:var(--green);">—</span>`;
+      editCell = '<span style="font-size:.75rem;color:var(--text-muted);">zadaj cenu</span>';
+    } else {
+      priceCell = '<span style="color:var(--text-muted);">—</span>';
+      totalCell = '<span style="color:var(--text-muted);">—</span>';
+    }
+
+    html += `<tr style="background:${rowBg};border-bottom:1px solid var(--border);" id="bomRow_${p.pos}">
+      <td style="padding:5px 8px;font-weight:600;">${p.pos}</td>
+      <td style="padding:5px 8px;">${p.name}</td>
+      <td style="padding:5px 8px;text-align:center;">${p.qty}</td>
+      <td style="padding:5px 8px;text-align:right;">${priceCell}</td>
+      <td style="padding:5px 8px;text-align:right;" id="bomRowTotal_${p.pos}">${totalCell}</td>
+      <td style="padding:5px 8px;text-align:center;">${editCell}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+
+  document.getElementById('bomBatchTable').innerHTML = html;
+  window._bomTotals = { laser: laserTotal, bought: boughtTotal };
+  updateBomGrandTotal();
+  document.getElementById('bomBatchResults').style.display = 'block';
+}
+
+function updateBomPrice(pos, newPrice, qty) {
+  const price = parseFloat(newPrice) || 0;
+  const total = price * qty;
+  document.getElementById(`bomRowTotal_${pos}`).innerHTML =
+    `<span style="font-weight:700;">${fmtEur(total)}</span>`;
+  recalcBomLaserTotal();
+}
+
+function updateBomBought(pos, newPrice, qty) {
+  const price = parseFloat(newPrice) || 0;
+  const total = price * qty;
+  document.getElementById(`boughtTotal_${pos}`).textContent = fmtEur(total);
+  recalcBomBoughtTotal();
+}
+
+function recalcBomLaserTotal() {
+  const bom = window._bomData;
+  let total = 0;
+  bom.parts.filter(p => p.type === 'laser').forEach(p => {
+    const el = document.getElementById(`bomRowTotal_${p.pos}`);
+    if (el) {
+      const txt = el.textContent.replace(',','.').replace(' €','').replace('.','').replace(',','.');
+      const val = parseFloat(el.textContent.replace(/[^\d,.]/g,'').replace(',','.')) || 0;
+      total += val;
+    }
+  });
+  window._bomTotals.laser = total;
+  updateBomGrandTotal();
+}
+
+function recalcBomBoughtTotal() {
+  const bom = window._bomData;
+  let total = 0;
+  bom.parts.filter(p => p.type === 'bought').forEach(p => {
+    const el = document.getElementById(`boughtTotal_${p.pos}`);
+    if (el) {
+      const val = parseFloat(el.textContent.replace(/[^\d,.]/g,'').replace(',','.')) || 0;
+      total += val;
+    }
+  });
+  window._bomTotals.bought = total;
+  updateBomGrandTotal();
+}
+
+function updateBomGrandTotal() {
+  const t = window._bomTotals || {laser:0, bought:0};
+  const grand = t.laser + t.bought;
+  document.getElementById('bomLaserTotal').textContent = fmtEur(t.laser);
+  document.getElementById('bomBoughtTotal').textContent = fmtEur(t.bought);
+  document.getElementById('bomGrandTotal').textContent = fmtEur(grand);
+}
+
+async function generateBomQuote() {
+  if (!window._bomData || !window._bomBatchResults) {
+    alert('Najprv vypočítaj BOM.'); return;
+  }
+  // TODO: implementovať PDF export zostavy
+  alert('PDF export zostavy — bude pridaný čoskoro.');
 }
 
 function loadBomPart(index) {
