@@ -1592,6 +1592,173 @@ def generate_bom_quote():
     return response
 
 
+@app.route('/generate-multiqty-quote', methods=['POST'])
+def generate_multiqty_quote():
+    """PDF s cenovými hladinami pre rôzne množstvá."""
+    import datetime, time as _time
+    data         = request.get_json()
+    rows         = data.get("rows", [])
+    part_desc    = data.get("part_description", "Výpalok")
+    material     = data.get("material", "")
+    thickness    = data.get("thickness_mm", "")
+    quote_number = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
+    lang         = data.get("lang", "de")
+    company      = data.get("company", {})
+
+    ORANGE=colors.HexColor('#f97316'); ORANGE_BG=colors.HexColor('#fff7ed')
+    DARK=colors.HexColor('#1c1917'); MUTED=colors.HexColor('#78716c')
+    LIGHT=colors.HexColor('#fafaf9'); BORDER=colors.HexColor('#e7e5e4')
+    GREEN=colors.HexColor('#16a34a')
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm, topMargin=15*mm, bottomMargin=20*mm)
+
+    def sty(name, **kw):
+        return ParagraphStyle(name, parent=getSampleStyleSheet()['Normal'], **kw)
+
+    s_normal = sty('N', fontSize=9, fontName=_PDF_FONT, textColor=DARK, leading=13)
+    s_small  = sty('S', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, leading=11)
+    s_bold   = sty('B', fontSize=9, fontName=_PDF_FONT_BOLD, textColor=DARK, leading=13)
+    s_right  = sty('R', fontSize=9, fontName=_PDF_FONT, textColor=DARK, alignment=TA_RIGHT)
+    s_title  = sty('TT',fontSize=16, fontName=_PDF_FONT_BOLD, textColor=DARK, alignment=TA_RIGHT, leading=20)
+
+    def eur(v):
+        try: return f'{float(v):,.2f}'.replace(',','X').replace('.', ',').replace('X','.') + ' €'
+        except: return '0,00 €'
+
+    today    = datetime.date.today()
+    valid_dt = today + datetime.timedelta(days=30)
+    title_label = "Preisangebot" if lang == "de" else "Cenová ponuka"
+
+    story = []
+
+    # Hlavička
+    logo_path = os.path.join(os.path.dirname(__file__), 'logo.jpeg')
+    logo_cell = RLImage(logo_path, width=42*mm, height=16*mm, kind='proportional') \
+                if os.path.exists(logo_path) else Paragraph('<b>TecKon s.r.o.</b>', s_bold)
+
+    hdr = Table([[logo_cell,
+        Paragraph(f'{title_label}: <b>{quote_number}</b>', s_title),
+    ]], colWidths=[80*mm, 92*mm])
+    hdr.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LINEBELOW',(0,0),(-1,0),0.5,BORDER),('BOTTOMPADDING',(0,0),(-1,0),6)]))
+    story.append(hdr)
+    story.append(Spacer(1,5*mm))
+
+    # Adresy
+    cust_name = company.get("name","")
+    cust_addr = company.get("address","")
+    cust_uid  = company.get("uid","")
+    teckon_txt = ('<b>TecKon s.r.o.</b><br/>Malobytčianska cesta 1486<br/>014 01 Bytča<br/>'
+                  'the Slovak Republic<br/><br/>ID-Nr.: 47183179<br/>UID: SK2023819721')
+    cust_box = Table([[Paragraph(f'<b>{cust_name}</b><br/><br/>{cust_addr}', s_normal)]],
+                     colWidths=[85*mm])
+    cust_box.setStyle(TableStyle([('BOX',(0,0),(-1,-1),0.8,BORDER),
+        ('PADDING',(0,0),(-1,-1),8),('BACKGROUND',(0,0),(-1,-1),LIGHT)]))
+    addr = Table([[Paragraph(teckon_txt, s_small),
+        Table([[Paragraph('Abnehmer:' if lang=='de' else 'Zákazník:', s_small)],
+               [cust_box],[Paragraph(f'UID: {cust_uid}' if cust_uid else '', s_small)],
+               [Spacer(1,2*mm)],
+               [Paragraph(f'{"Ausgestellt am" if lang=="de" else "Dátum"}: {today.strftime("%d.%m.%Y")}', s_small)],
+               [Paragraph(f'{"Gültig bis" if lang=="de" else "Platná do"}: {valid_dt.strftime("%d.%m.%Y")}', s_small)],
+               ], colWidths=[92*mm])
+    ]], colWidths=[75*mm, 97*mm])
+    addr.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
+    story.append(addr)
+    story.append(Spacer(1,5*mm))
+
+    # Diel info
+    story.append(Paragraph(f'{part_desc} · {material.upper()} {thickness}mm', s_small))
+    story.append(Spacer(1,4*mm))
+
+    # Tabuľka cenových hladín
+    col_w = [25*mm, 35*mm, 35*mm, 30*mm, 30*mm, 17*mm]
+    menge_lbl = "Menge" if lang == "de" else "Množstvo"
+    rows_tbl = [[
+        Paragraph(menge_lbl, sty('th1', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white)),
+        Paragraph("Einheitspreis" if lang=="de" else "Cena / ks",
+                  sty('th2', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph("Gesamtbetrag" if lang=="de" else "Celkom",
+                  sty('th3', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph("Material / Stk" if lang=="de" else "Materiál / ks",
+                  sty('th4', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph("Maschine / Stk" if lang=="de" else "Stroj / ks",
+                  sty('th5', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph("Marge" if lang=="de" else "Zisk",
+                  sty('th6', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
+    ]]
+
+    min_price = min((float(r.get("price_per_piece",0)) for r in rows), default=0)
+    for i, row in enumerate(rows):
+        ppp   = float(row.get("price_per_piece", 0))
+        total = float(row.get("price_total", 0))
+        mat   = float(row.get("material_cost_sell", 0))
+        mach  = float(row.get("machine_cost_per_piece", 0))
+        cost  = float(row.get("cost_per_piece", 0))
+        profit_pct = round((ppp - cost) / cost * 100) if cost > 0 else 0
+        is_best = abs(ppp - min_price) < 0.001
+        bg = colors.HexColor('#f0fdf4') if is_best else (LIGHT if i%2==0 else colors.white)
+        best_star = ' ★' if is_best else ''
+
+        rows_tbl.append([
+            Paragraph(f'{row.get("qty","")} Stk{best_star}',
+                      sty(f'r1_{i}', fontSize=9, fontName=_PDF_FONT_BOLD if is_best else _PDF_FONT,
+                          textColor=GREEN if is_best else DARK)),
+            Paragraph(eur(ppp),
+                      sty(f'r2_{i}', fontSize=9, fontName=_PDF_FONT_BOLD if is_best else _PDF_FONT,
+                          textColor=GREEN if is_best else DARK, alignment=TA_RIGHT)),
+            Paragraph(eur(total),
+                      sty(f'r3_{i}', fontSize=9, fontName=_PDF_FONT, textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(eur(mat),
+                      sty(f'r4_{i}', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, alignment=TA_RIGHT)),
+            Paragraph(eur(mach),
+                      sty(f'r5_{i}', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, alignment=TA_RIGHT)),
+            Paragraph(f'{profit_pct}%',
+                      sty(f'r6_{i}', fontSize=8, fontName=_PDF_FONT, textColor=GREEN, alignment=TA_RIGHT)),
+        ])
+
+    tbl = Table(rows_tbl, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0), ORANGE),
+        ('GRID',(0,0),(-1,-1),0.3,BORDER),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('LEFTPADDING',(0,0),(-1,-1),5),
+    ]))
+    # Zelené pozadie pre najlepšiu cenu
+    for i, row in enumerate(rows):
+        ppp = float(row.get("price_per_piece",0))
+        if abs(ppp - min_price) < 0.001:
+            tbl.setStyle(TableStyle([('BACKGROUND',(0,i+1),(-1,i+1), colors.HexColor('#f0fdf4'))]))
+
+    story.append(tbl)
+    story.append(Spacer(1,6*mm))
+
+    # Podmienky
+    conds = ("Lieferfrist - 4 Wochen\nAlle Preise sind EXW SK-Bytča\nZahlungsbedingungen - 30 Tage netto"
+             if lang == "de" else
+             "Dodacia lehota - 4 týždne\nVšetky ceny sú EXW SK-Bytča\nSplatnosť - 30 dní netto")
+    for line in conds.split('\n'):
+        story.append(Paragraph(line, s_small))
+    story.append(Spacer(1,10*mm))
+
+    sig = Table([[
+        Paragraph(f'<b>{"Ausgestellt von" if lang=="de" else "Vystavil"}:</b><br/><br/>'
+                  'Michal Lukačko<br/>michal.lukacko@teckon.sk<br/>0910 216 123', s_small),
+        Paragraph(f'<b>{"Abnahme durch" if lang=="de" else "Prevzal"}:</b>', s_small),
+    ]], colWidths=[85*mm, 87*mm])
+    sig.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
+    story.append(sig)
+
+    doc.build(story)
+    pdf_bytes = buf.getvalue()
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename="Preisangebot_{quote_number}_Mengen.pdf"'
+    return response
+
+
 @app.route('/generate-quote', methods=['POST'])
 def generate_quote():
     """Vygeneruje cenovú ponuku ako PDF — štýl Flowii/TecKon."""

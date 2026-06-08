@@ -479,25 +479,88 @@
           💡 Fill faktor: 1.0 = obdĺžnik · 0.78 = kruh · 0.65 = bowtie · 0.5 = trojuholník
         </div>
 
-        <!-- Povrchová úprava -->
+        <!-- Povrchové úpravy a operácie -->
         <div style="margin-top:12px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-            <input type="checkbox" id="pPowderCoating" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
-            <label for="pPowderCoating" style="cursor:pointer;font-weight:600;font-size:.9rem;">🎨 Prášková farba</label>
+          <div style="font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:10px;">Ďalšie operácie</div>
+
+          <!-- Zváranie -->
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <input type="checkbox" id="pWelding" style="width:16px;height:16px;cursor:pointer;accent-color:#f59e0b;">
+              <label for="pWelding" style="cursor:pointer;font-weight:600;font-size:.9rem;">🔥 Zváranie</label>
+            </div>
+            <div id="weldingOptions" style="display:none;padding-left:26px;">
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <div>
+                  <label style="font-size:.75rem;color:var(--text-muted);display:block;">Cena / zostava (€)</label>
+                  <input type="number" id="pWeldingPrice" value="0" min="0" step="0.5"
+                    style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:90px;outline:none;">
+                </div>
+                <div style="font-size:.75rem;color:var(--text-muted);max-width:160px;">
+                  Odhadni čas × sadzba zváreča<br>(napr. 45 min × 35€/hod = 26€)
+                </div>
+              </div>
+            </div>
           </div>
-          <div id="powderOptions" style="display:none;margin-top:6px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <label style="font-size:.8rem;color:var(--text-muted);">Cena (€/m²)</label>
-              <input type="number" id="pPowderPrice" value="14" min="1" max="100" step="0.5"
-                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:80px;outline:none;">
-              <span style="font-size:.78rem;color:var(--text-muted);">(obidve strany)</span>
+
+          <!-- Žiarové zinkovanie -->
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <input type="checkbox" id="pGalvanizing" style="width:16px;height:16px;cursor:pointer;accent-color:#22d3ee;">
+              <label for="pGalvanizing" style="cursor:pointer;font-weight:600;font-size:.9rem;">🌊 Žiarové zinkovanie</label>
+            </div>
+            <div id="galvOptions" style="display:none;padding-left:26px;">
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <div>
+                  <label style="font-size:.75rem;color:var(--text-muted);display:block;">Cena (€/kg)</label>
+                  <input type="number" id="pGalvPrice" value="0.90" min="0" step="0.05"
+                    style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:80px;outline:none;">
+                </div>
+                <div>
+                  <label style="font-size:.75rem;color:var(--text-muted);display:block;">Min. zákazka (€)</label>
+                  <input type="number" id="pGalvMin" value="65" min="0" step="5"
+                    style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:70px;outline:none;">
+                </div>
+                <div style="font-size:.75rem;color:var(--text-muted);">
+                  Počíta sa z čistej hmotnosti dielu
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prášková farba -->
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <input type="checkbox" id="pPowderCoating" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+              <label for="pPowderCoating" style="cursor:pointer;font-weight:600;font-size:.9rem;">🎨 Prášková farba</label>
+            </div>
+            <div id="powderOptions" style="display:none;padding-left:26px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <label style="font-size:.8rem;color:var(--text-muted);">Cena (€/m²)</label>
+                <input type="number" id="pPowderPrice" value="14" min="1" max="100" step="0.5"
+                  style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:80px;outline:none;">
+                <span style="font-size:.78rem;color:var(--text-muted);">(obidve strany)</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <button class="btn btn-primary" id="calcBtn" onclick="calculate()" disabled>
-          Vypočítať cenu
-        </button>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary" id="calcBtn" onclick="calculate()" disabled style="flex:1;">
+            Vypočítať cenu
+          </button>
+          <button id="calcMultiBtn" onclick="calculateMultiQty()" disabled
+            style="flex:1;background:rgba(99,102,241,.15);color:#818cf8;border:1px solid rgba(99,102,241,.4);border-radius:10px;padding:12px;font-size:.9rem;font-weight:600;cursor:pointer;">
+            📊 Cenové hladiny
+          </button>
+        </div>
+
+        <!-- Multi-qty input -->
+        <div id="multiQtyPanel" style="display:none;margin-top:10px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1px solid rgba(99,102,241,.3);">
+          <label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:6px;">Množstvá (oddelené čiarkou):</label>
+          <input type="text" id="pMultiQty" value="25, 50, 100, 200, 500"
+            style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:100%;outline:none;">
+        </div>
       </div>
     </div>
 
@@ -897,6 +960,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pPowderCoating').addEventListener('change', function() {
     document.getElementById('powderOptions').style.display = this.checked ? 'block' : 'none';
   });
+  document.getElementById('pWelding').addEventListener('change', function() {
+    document.getElementById('weldingOptions').style.display = this.checked ? 'block' : 'none';
+  });
+  document.getElementById('pGalvanizing').addEventListener('change', function() {
+    document.getElementById('galvOptions').style.display = this.checked ? 'block' : 'none';
+  });
 });
 
 function toggleBboxEdit() {
@@ -1003,6 +1072,10 @@ async function uploadDxf(file) {
     showGeometry(geometry);
     setStatus('uploadStatus', 'ok', `✓ ${file.name} — geometria načítaná`);
     document.getElementById('calcBtn').disabled = false;
+    document.getElementById('calcMultiBtn').disabled = false;
+    document.getElementById('multiQtyPanel').style.display = 'block';
+    document.getElementById('calcMultiBtn').disabled = false;
+    document.getElementById('multiQtyPanel').style.display = 'block';
   } catch(e) {
     setStatus('uploadStatus', 'err', '✗ Chyba: ' + e.message);
   }
@@ -1112,6 +1185,8 @@ function manualUpdate() {
     };
     showGeometry(geometry);
     document.getElementById('calcBtn').disabled = false;
+    document.getElementById('calcMultiBtn').disabled = false;
+    document.getElementById('multiQtyPanel').style.display = 'block';
     document.getElementById('uploadStatus').className = 'status ok';
     document.getElementById('uploadStatus').textContent = '✓ Manuálne zadané hodnoty';
     document.getElementById('uploadStatus').style.display = 'block';
@@ -1354,6 +1429,177 @@ async function calculateBending() {
     alert('Chyba ohýbanie: ' + e.message);
   }
 }
+async function calculateMultiQty() {
+  if (!geometry) return;
+
+  const qtys = document.getElementById('pMultiQty').value
+    .split(',').map(v => parseInt(v.trim())).filter(v => v > 0);
+  if (!qtys.length) { alert('Zadaj aspoň 1 množstvo.'); return; }
+
+  const btn = document.getElementById('calcMultiBtn');
+  btn.textContent = '⏳ Počítam...';
+  btn.disabled = true;
+
+  // Spoločné parametre
+  const baseParams = {
+    material:            document.getElementById('pMaterial').value,
+    thickness_mm:        document.getElementById('pThickness').value,
+    hourly_rate:         document.getElementById('pHourly').value,
+    setup_time_min:      document.getElementById('pSetup').value,
+    margin_pct:          document.getElementById('pMargin').value,
+    material_price_kg:   document.getElementById('pMatPrice').value || null,
+    material_margin_pct: document.getElementById('pMatMargin').value,
+    scrap_factor:        document.getElementById('pScrap').value,
+    shape_factor:        document.getElementById('pShapeFactor').value,
+    holes:               window._aiHoles || [],
+    powder_coating:      document.getElementById('pPowderCoating').checked,
+    powder_coating_price: document.getElementById('pPowderPrice').value,
+  };
+
+  try {
+    // Pošli všetky qty naraz
+    const promises = qtys.map(q =>
+      fetch('/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geometry, params: { ...baseParams, quantity: q } })
+      }).then(r => r.json())
+    );
+    const results = await Promise.all(promises);
+
+    // Zobraz tabuľku cenových hladín
+    showMultiQtyResults(qtys, results);
+  } catch(e) {
+    alert('Chyba: ' + e.message);
+  } finally {
+    btn.textContent = '📊 Cenové hladiny';
+    btn.disabled = false;
+  }
+}
+
+function showMultiQtyResults(qtys, results) {
+  // Nájdi alebo vytvor panel
+  let panel = document.getElementById('multiQtyResults');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'multiQtyResults';
+    panel.style.cssText = 'margin-top:20px;';
+    document.getElementById('results-card').appendChild(panel);
+  }
+
+  let html = `
+    <div style="border-top:1px solid var(--border);padding-top:20px;margin-top:16px;">
+      <h2 style="font-size:.85rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">
+        📊 Cenové hladiny
+      </h2>
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
+        <thead>
+          <tr style="background:var(--surface2);">
+            <th style="padding:8px 10px;text-align:left;color:var(--text-muted);">Množstvo</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--text-muted);">Cena / ks</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--text-muted);">Celkom</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--text-muted);">Materiál / ks</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--text-muted);">Stroj / ks</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--text-muted);">Zisk</th>
+          </tr>
+        </thead><tbody>`;
+
+  const minPrice = Math.min(...results.filter(r=>r.ok).map(r=>r.result.price_per_piece));
+
+  qtys.forEach((q, i) => {
+    const r = results[i];
+    if (!r || !r.ok) {
+      html += `<tr><td colspan="6" style="padding:6px 10px;color:var(--red);">${q} ks — chyba</td></tr>`;
+      return;
+    }
+    const res = r.result;
+    const isMin = res.price_per_piece === minPrice;
+    const isCurrent = i === 0;
+    const bg = isMin ? 'rgba(34,197,94,.08)' : (i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)');
+    const profitPct = res.cost_per_piece > 0
+      ? ((res.price_per_piece - res.cost_per_piece) / res.cost_per_piece * 100).toFixed(0)
+      : 0;
+
+    html += `<tr style="background:${bg};border-bottom:1px solid var(--border);">
+      <td style="padding:8px 10px;font-weight:700;">
+        ${q} ks ${isMin ? '<span style="color:var(--green);font-size:.75rem;">★ najlepšia</span>' : ''}
+      </td>
+      <td style="padding:8px 10px;text-align:right;font-weight:700;color:${isMin?'var(--green)':'var(--accent)'};">
+        ${fmtEur(res.price_per_piece)}
+      </td>
+      <td style="padding:8px 10px;text-align:right;font-weight:600;">
+        ${fmtEur(res.price_total)}
+      </td>
+      <td style="padding:8px 10px;text-align:right;color:var(--text-muted);">
+        ${fmtEur(res.material_cost_sell)}
+      </td>
+      <td style="padding:8px 10px;text-align:right;color:var(--text-muted);">
+        ${fmtEur(res.machine_cost_per_piece)}
+      </td>
+      <td style="padding:8px 10px;text-align:right;color:var(--green);">
+        ${profitPct}%
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>
+    <div style="margin-top:10px;text-align:right;">
+      <button onclick="exportMultiQtyPdf()" style="background:#6366f1;color:white;border:none;border-radius:8px;padding:7px 16px;font-size:.82rem;font-weight:600;cursor:pointer;">
+        📄 Exportovať cenové hladiny do PDF
+      </button>
+    </div>
+  </div>`;
+
+  panel.innerHTML = html;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Ulož pre PDF export
+  window._multiQtyData = { qtys, results };
+}
+
+async function exportMultiQtyPdf() {
+  if (!window._multiQtyData) return;
+  const { qtys, results } = window._multiQtyData;
+
+  const rows = qtys.map((q, i) => {
+    const r = results[i];
+    if (!r || !r.ok) return null;
+    return {
+      qty: q,
+      price_per_piece: r.result.price_per_piece,
+      price_total: r.result.price_total,
+      material_cost_sell: r.result.material_cost_sell,
+      machine_cost_per_piece: r.result.machine_cost_per_piece,
+      cost_per_piece: r.result.cost_per_piece,
+    };
+  }).filter(Boolean);
+
+  try {
+    const res = await fetch('/generate-multiqty-quote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows,
+        part_description: window._aiPartDesc || document.getElementById('qPartDesc')?.value || 'Výpalok',
+        material: document.getElementById('pMaterial').value,
+        thickness_mm: document.getElementById('pThickness').value,
+        quote_number: document.getElementById('qNumber')?.value || '',
+        lang: document.getElementById('qLang')?.value || 'de',
+        company: {
+          name:    document.getElementById('qCustomer')?.value || '',
+          address: document.getElementById('qAddress')?.value || '',
+          uid:     document.getElementById('qUID')?.value || '',
+        }
+      })
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'cenove_hladiny.pdf'; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('Chyba: ' + e.message); }
+}
+
 async function generateQuote() {
   if (!window._lastResult) { alert('Najprv vypočítaj cenu.'); return; }
 
