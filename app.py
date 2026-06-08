@@ -1688,6 +1688,7 @@ def generate_multiqty_quote():
         ("bending_per_piece", "Biegen / Stk",  "Ohyb / ks",    20),
         ("powder_per_piece",  "Lackierung / Stk","Farba / ks",  20),
         ("gas_per_piece",     "Gas / Stk",      "Plyn / ks",    18),
+        ("assembly_per_piece","Montage / Stk",  "Montáž / ks",  20),
     ]
     active_cols = [(key, lde if de else lsk, w) for key, lde, lsk, w in all_cols if has_col(key)]
 

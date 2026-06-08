@@ -875,6 +875,84 @@
         </div>
       </div>
 
+      <!-- Montáž -->
+      <div class="card" id="assemblyCard" style="margin-top:20px;display:none;">
+        <h2 class="section-title">🔩 Montáž <span style="font-size:.75rem;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">(lisovanie, závitovanie, odihlenie...)</span></h2>
+
+        <div id="assemblyList" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;">
+          <span style="font-size:.82rem;color:var(--text-muted);">Žiadne montážne operácie</span>
+        </div>
+
+        <!-- Pridať operáciu -->
+        <div style="margin-bottom:14px;">
+          <button onclick="toggleAddAssembly()" id="btnAddAssembly"
+            style="background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:6px 14px;font-size:.82rem;color:#e879f9;cursor:pointer;">
+            + Pridať operáciu
+          </button>
+          <div id="addAssemblyForm" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(232,121,249,.07);border:1px solid rgba(232,121,249,.2);border-radius:8px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Operácia</label>
+                <input type="text" id="newAsmName" value="Montáž" placeholder="napr. Einpressmutter M4"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:160px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Počet / ks</label>
+                <input type="number" id="newAsmQtyPerPiece" value="1" min="1" max="100"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:60px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Cena / op (€)</label>
+                <input type="number" id="newAsmPricePerOp" value="0.50" min="0" step="0.05"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:75px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:.75rem;color:var(--text-muted);display:block;">Setup (€/séria)</label>
+                <input type="number" id="newAsmSetup" value="5" min="0" step="1"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.88rem;width:65px;outline:none;">
+              </div>
+              <button onclick="addAssemblyOp()"
+                style="background:#e879f9;color:#1a1d27;border:none;border-radius:7px;padding:7px 14px;font-size:.85rem;font-weight:600;cursor:pointer;">
+                Pridať
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:14px;">
+          <div>
+            <label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Marža (%)</label>
+            <input type="number" id="pAsmMargin" value="20" min="0" max="100" step="1"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:.88rem;width:90px;outline:none;">
+          </div>
+          <button onclick="calculateAssembly()"
+            style="background:#e879f9;color:#1a1d27;border:none;border-radius:8px;padding:8px 18px;font-size:.88rem;font-weight:600;cursor:pointer;">
+            Vypočítať montáž
+          </button>
+        </div>
+
+        <div id="asmResults" style="display:none;">
+          <div class="breakdown">
+            <div class="breakdown-row">
+              <span class="key">Montážne operácie</span>
+              <span class="val" id="rAsmOps">—</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="key">Setup / ks</span>
+              <span class="val" id="rAsmSetup">—</span>
+            </div>
+            <div class="breakdown-row total">
+              <span class="key">Montáž s maržou / ks</span>
+              <span class="val" id="rAsmSell">—</span>
+            </div>
+            <div class="breakdown-row" style="background:rgba(232,121,249,.08);border:1px solid rgba(232,121,249,.3);border-radius:8px;padding:10px 12px;margin-top:8px;">
+              <span class="key" style="font-weight:700;font-size:.95rem;">💰 Celková cena s montážou</span>
+              <span class="val" style="font-size:1.1rem;font-weight:700;color:#e879f9;" id="rTotalWithAsm">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card" id="nestingCard" style="margin-top:20px;display:none;">
         <h2 class="section-title">📐 Vyťaženosť tabule</h2>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
@@ -1350,8 +1428,11 @@ function showResults(r, qty) {
     document.getElementById('qPartDesc').value = window._aiPartDesc;
   }
 
-  // Zobraz valcovací modul
+  // Zobraz valcovací a montážny modul
   document.getElementById('rollingCard').style.display = 'block';
+  document.getElementById('assemblyCard').style.display = 'block';
+  if (!window._assemblyOps) window._assemblyOps = [];
+  renderAssemblyList();
   if (!window._rolls) window._rolls = [];
   renderRollList();
 
@@ -1491,6 +1572,8 @@ async function calculateMultiQty() {
   const hasBending = bends.length > 0;
   const bendMargin = parseFloat(document.getElementById('pBendMargin')?.value) || 20;
   const weight = window._lastResult?.weight_kg_net || 0;
+  const asmOps = window._assemblyOps || [];
+  const asmMargin = parseFloat(document.getElementById('pAsmMargin')?.value) || 20;
 
   try {
     // Pošli všetky qty naraz — laser aj ohýbanie paralelne
@@ -1501,8 +1584,7 @@ async function calculateMultiQty() {
         body: JSON.stringify({ geometry, params: { ...baseParams, quantity: q } })
       }).then(r => r.json());
 
-      let bendingTotal = 0;
-      let bendingPerPiece = 0;
+      let bendingTotal = 0, bendingPerPiece = 0;
       if (hasBending) {
         const bendRes = await fetch('/calculate-bending', {
           method: 'POST',
@@ -1510,12 +1592,22 @@ async function calculateMultiQty() {
           body: JSON.stringify({ bends, qty: q, margin_pct: bendMargin, weight_kg: weight })
         }).then(r => r.json());
         if (bendRes.ok) {
-          bendingTotal     = bendRes.result.bending_total || 0;
-          bendingPerPiece  = bendRes.result.bending_sell_per_piece || 0;
+          bendingTotal    = bendRes.result.bending_total || 0;
+          bendingPerPiece = bendRes.result.bending_sell_per_piece || 0;
         }
       }
 
-      return { laser: laserRes, bendingTotal, bendingPerPiece };
+      // Montáž — cena závisí od qty (setup sa amortizuje)
+      let asmPerPiece = 0, asmTotal = 0;
+      if (asmOps.length > 0) {
+        let opCost = 0, setupTotal = 0;
+        asmOps.forEach(op => { opCost += op.qty_per_piece * op.price_per_op; setupTotal += op.setup; });
+        const netPpc = opCost + setupTotal / q;
+        asmPerPiece = netPpc * (1 + asmMargin / 100);
+        asmTotal    = asmPerPiece * q;
+      }
+
+      return { laser: laserRes, bendingTotal, bendingPerPiece, asmPerPiece, asmTotal };
     });
     const results = await Promise.all(promises);
 
@@ -1571,8 +1663,10 @@ function showMultiQtyResults(qtys, results, hasBending) {
     const res   = r.laser.result;
     const bppc  = r.bendingPerPiece || 0;
     const btot  = r.bendingTotal || 0;
-    const totalPpc   = res.price_per_piece + bppc;
-    const totalCelkom = res.price_total + btot;
+    const appc  = r.asmPerPiece || 0;
+    const atot  = r.asmTotal || 0;
+    const totalPpc    = res.price_per_piece + bppc + appc;
+    const totalCelkom = res.price_total + btot + atot;
     const isMin = Math.abs(totalPpc - minPrice) < 0.001;
     const bg = isMin ? 'rgba(34,197,94,.08)' : (i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)');
     const profitPct = res.cost_per_piece > 0
@@ -1630,18 +1724,21 @@ async function exportMultiQtyPdf() {
     const res   = r.laser.result;
     const bppc  = r.bendingPerPiece || 0;
     const btot  = r.bendingTotal || 0;
+    const appc  = r.asmPerPiece || 0;
+    const atot  = r.asmTotal || 0;
     const margin_pct = parseFloat(document.getElementById('pMargin').value) || 20;
     const machine_sell = res.machine_cost_per_piece * (1 + margin_pct / 100);
     return {
-      qty:             q,
-      laser_per_piece: machine_sell,
+      qty:               q,
+      laser_per_piece:   machine_sell,
       material_per_piece: res.material_cost_sell,
-      gas_per_piece:   res.gas_cost_per_piece || 0,
+      gas_per_piece:     res.gas_cost_per_piece || 0,
       bending_per_piece: bppc,
-      powder_per_piece: res.powder_cost_per_piece || 0,
-      price_per_piece: res.price_per_piece + bppc,
-      price_total:     res.price_total + btot,
-      cost_per_piece:  res.cost_per_piece,
+      powder_per_piece:  res.powder_cost_per_piece || 0,
+      assembly_per_piece: appc,
+      price_per_piece:   res.price_per_piece + bppc + appc,
+      price_total:       res.price_total + btot + atot,
+      cost_per_piece:    res.cost_per_piece,
     };
   }).filter(Boolean);
 
@@ -2094,6 +2191,91 @@ function loadBomPart(index) {
 
   setStatus('uploadStatus', 'ok',
     `✓ Načítaný diel: ${p.name} — uprav parametre a vypočítaj cenu`);
+}
+
+// ── MONTÁŽ ────────────────────────────────────────────────────────
+function renderAssemblyList() {
+  const ops = window._assemblyOps || [];
+  const list = document.getElementById('assemblyList');
+  if (!ops.length) {
+    list.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted);">Žiadne montážne operácie</span>';
+    return;
+  }
+  list.innerHTML = ops.map((op, i) =>
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:.82rem;display:flex;align-items:center;gap:8px;">
+      <span style="color:var(--text-muted)">${i+1}.</span>
+      <strong>${op.name}</strong> · ${op.qty_per_piece}× · ${fmtEur(op.price_per_op)}/op · setup ${fmtEur(op.setup)}
+      <button onclick="removeAssemblyOp(${i})"
+        style="background:rgba(239,68,68,.15);border:none;color:var(--red);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:.8rem;">✕</button>
+    </div>`
+  ).join('');
+}
+
+function toggleAddAssembly() {
+  const f = document.getElementById('addAssemblyForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+function addAssemblyOp() {
+  const name         = document.getElementById('newAsmName').value || 'Montáž';
+  const qtyPerPiece  = parseInt(document.getElementById('newAsmQtyPerPiece').value) || 1;
+  const pricePerOp   = parseFloat(document.getElementById('newAsmPricePerOp').value) || 0.50;
+  const setup        = parseFloat(document.getElementById('newAsmSetup').value) || 5;
+  if (!window._assemblyOps) window._assemblyOps = [];
+  window._assemblyOps.push({ name, qty_per_piece: qtyPerPiece, price_per_op: pricePerOp, setup });
+  renderAssemblyList();
+  document.getElementById('addAssemblyForm').style.display = 'none';
+  document.getElementById('asmResults').style.display = 'none';
+}
+
+function removeAssemblyOp(index) {
+  if (!window._assemblyOps) return;
+  window._assemblyOps.splice(index, 1);
+  renderAssemblyList();
+  document.getElementById('asmResults').style.display = 'none';
+}
+
+function calculateAssembly() {
+  const ops = window._assemblyOps || [];
+  if (!ops.length) { alert('Pridaj aspoň 1 operáciu.'); return; }
+  const qty    = parseInt(document.getElementById('pQty').value) || 1;
+  const margin = parseFloat(document.getElementById('pAsmMargin').value) || 20;
+
+  let totalSetup = 0;
+  let costPerPiece = 0;
+  const details = [];
+
+  ops.forEach(op => {
+    const opCost = op.qty_per_piece * op.price_per_op;
+    costPerPiece += opCost;
+    totalSetup += op.setup;
+    details.push(`${op.name}: ${op.qty_per_piece}× × ${fmtEur(op.price_per_op)} = ${fmtEur(opCost)}/ks`);
+  });
+
+  const setupPerPiece = totalSetup / qty;
+  const netPerPiece   = costPerPiece + setupPerPiece;
+  const sellPerPiece  = netPerPiece * (1 + margin / 100);
+  window._lastAssembly = { sell_per_piece: sellPerPiece, total: sellPerPiece * qty, ops_detail: details };
+
+  document.getElementById('rAsmOps').innerHTML =
+    details.map(d => `<span style="font-size:.78rem;color:var(--text-muted)">${d}</span>`).join('<br>');
+  document.getElementById('rAsmSetup').textContent =
+    fmtEur(totalSetup) + ' celkom → ' + fmtEur(setupPerPiece) + '/ks';
+  document.getElementById('rAsmSell').textContent = fmtEur(sellPerPiece);
+
+  const laserTotal = parseFloat(
+    document.getElementById('rPriceTotal').textContent.replace(',','.').replace(' €','')
+  ) || 0;
+  const totalEl = document.getElementById('rTotalWithAsm');
+  totalEl.textContent = '';
+  const tp = document.createElement('span');
+  tp.textContent = fmtEur(laserTotal + sellPerPiece * qty);
+  const tn = document.createElement('span');
+  tn.style.cssText = 'color:var(--text-muted);font-size:.78rem;font-weight:400';
+  tn.textContent = ` (laser ${fmtEur(laserTotal)} + montáž ${fmtEur(sellPerPiece * qty)})`;
+  totalEl.appendChild(tp); totalEl.appendChild(tn);
+
+  document.getElementById('asmResults').style.display = 'block';
 }
 
 // ── VALCOVANIE ────────────────────────────────────────────────────
