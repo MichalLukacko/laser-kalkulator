@@ -1598,11 +1598,12 @@ def generate_multiqty_quote():
     import datetime, time as _time
     data         = request.get_json()
     rows         = data.get("rows", [])
-    part_desc    = data.get("part_description", "Výpalok")
-    material     = data.get("material", "")
-    thickness    = data.get("thickness_mm", "")
-    quote_number = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
-    lang         = data.get("lang", "de")
+    part_desc      = data.get("part_description", "Výpalok")
+    drawing_number = data.get("drawing_number", "")
+    material       = data.get("material", "")
+    thickness      = data.get("thickness_mm", "")
+    quote_number   = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
+    lang           = data.get("lang", "de")
     company      = data.get("company", {})
 
     ORANGE=colors.HexColor('#f97316'); ORANGE_BG=colors.HexColor('#fff7ed')
@@ -1669,7 +1670,8 @@ def generate_multiqty_quote():
     story.append(Spacer(1,5*mm))
 
     # Diel info
-    story.append(Paragraph(f'{part_desc} · {material.upper()} {thickness}mm', s_small))
+    dnum = f' · {drawing_number}' if drawing_number else ''
+    story.append(Paragraph(f'{part_desc}{dnum} · {material.upper()} {thickness}mm', s_small))
     story.append(Spacer(1,4*mm))
 
     # Tabuľka cenových hladín
@@ -1770,9 +1772,10 @@ def generate_quote():
     bending  = data.get("bending", {})
     rolling  = data.get("rolling", {})
     company  = data.get("company", {})
-    part_desc   = data.get("part_description", "Výpalok")
-    quote_number = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
-    lang     = data.get("lang", "de")  # "de" alebo "sk"
+    part_desc      = data.get("part_description", "Výpalok")
+    drawing_number = data.get("drawing_number", "")
+    quote_number   = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
+    lang           = data.get("lang", "de")  # "de" alebo "sk"
 
     # ── Texty podľa jazyka (de/sk) ────────────────────────────────────
     T = {
@@ -1950,9 +1953,10 @@ def generate_quote():
 
     nr = 1
     mat_str = f'{params.get("material","").upper()} {params.get("thickness_mm","")}mm'
+    dnum_str = f' · {drawing_number}' if drawing_number else ''
 
     # Rezanie + materiál (ako 1 položka — predajná cena/ks)
-    rows.append(make_row(nr, part_desc, mat_str,
+    rows.append(make_row(nr, f'{part_desc}{dnum_str}', mat_str,
         qty, 'Stk', vat_pct,
         r.get("price_per_piece", 0),
         laser_total))

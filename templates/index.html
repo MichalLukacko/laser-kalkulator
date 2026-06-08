@@ -594,8 +594,13 @@
                 style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
             </div>
             <div>
-              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Popis dielu</label>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Názov dielu</label>
               <input type="text" id="qPartDesc" placeholder="napr. Ochranný kryt"
+                style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Číslo výkresu</label>
+              <input type="text" id="qDrawingNumber" placeholder="napr. A6Z99002033160"
                 style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
             </div>
             <div>
@@ -1100,6 +1105,12 @@ async function uploadPdf(file) {
       window._aiHoles = data.ai_analysis.holes || [];
       window._aiBends = data.ai_analysis.bends || [];
       window._aiPartDesc = data.ai_analysis.part_description || '';
+      // Auto-vyplň číslo výkresu z názvu súboru (napr. "A6Z99002033160_000_...pdf" → "A6Z99002033160")
+      const drawEl = document.getElementById('qDrawingNumber');
+      if (drawEl && !drawEl.value) {
+        const fnMatch = file.name.match(/^([A-Z0-9\-]+)/i);
+        if (fnMatch) drawEl.value = fnMatch[1].replace(/_+$/, '');
+      }
       showAiAnalysis(data.ai_analysis);
       // Auto-fill material and thickness from AI
       if (data.ai_analysis.material) {
@@ -1116,6 +1127,8 @@ async function uploadPdf(file) {
     const confEmoji = conf === 'high' ? '✓' : conf === 'medium' ? '⚠' : '⚠';
     setStatus('uploadStatus', 'ok', `${confEmoji} ${file.name} — AI analýza dokončená (istota: ${conf})`);
     document.getElementById('calcBtn').disabled = false;
+    document.getElementById('calcMultiBtn').disabled = false;
+    document.getElementById('multiQtyPanel').style.display = 'block';
   } catch(e) {
     setStatus('uploadStatus', 'err', '✗ Chyba: ' + e.message);
   }
@@ -1456,19 +1469,40 @@ async function calculateMultiQty() {
     powder_coating_price: document.getElementById('pPowderPrice').value,
   };
 
+  const bends = window._aiBends || [];
+  const hasBending = bends.length > 0;
+  const bendMargin = parseFloat(document.getElementById('pBendMargin')?.value) || 20;
+  const weight = window._lastResult?.weight_kg_net || 0;
+
   try {
-    // Pošli všetky qty naraz
-    const promises = qtys.map(q =>
-      fetch('/calculate', {
+    // Pošli všetky qty naraz — laser aj ohýbanie paralelne
+    const promises = qtys.map(async q => {
+      const laserRes = await fetch('/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ geometry, params: { ...baseParams, quantity: q } })
-      }).then(r => r.json())
-    );
+      }).then(r => r.json());
+
+      let bendingTotal = 0;
+      let bendingPerPiece = 0;
+      if (hasBending) {
+        const bendRes = await fetch('/calculate-bending', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bends, qty: q, margin_pct: bendMargin, weight_kg: weight })
+        }).then(r => r.json());
+        if (bendRes.ok) {
+          bendingTotal     = bendRes.result.bending_total || 0;
+          bendingPerPiece  = bendRes.result.bending_sell_per_piece || 0;
+        }
+      }
+
+      return { laser: laserRes, bendingTotal, bendingPerPiece };
+    });
     const results = await Promise.all(promises);
 
     // Zobraz tabuľku cenových hladín
-    showMultiQtyResults(qtys, results);
+    showMultiQtyResults(qtys, results, hasBending);
   } catch(e) {
     alert('Chyba: ' + e.message);
   } finally {
@@ -1477,7 +1511,7 @@ async function calculateMultiQty() {
   }
 }
 
-function showMultiQtyResults(qtys, results) {
+function showMultiQtyResults(qtys, results, hasBending) {
   // Nájdi alebo vytvor panel
   let panel = document.getElementById('multiQtyResults');
   if (!panel) {
@@ -1504,31 +1538,42 @@ function showMultiQtyResults(qtys, results) {
           </tr>
         </thead><tbody>`;
 
-  const minPrice = Math.min(...results.filter(r=>r.ok).map(r=>r.result.price_per_piece));
+  const totalPrices = results.map(r => {
+    if (!r.laser?.ok) return Infinity;
+    return r.laser.result.price_per_piece + (r.bendingPerPiece || 0);
+  });
+  const minPrice = Math.min(...totalPrices.filter(v => v < Infinity));
 
   qtys.forEach((q, i) => {
     const r = results[i];
-    if (!r || !r.ok) {
+    if (!r || !r.laser?.ok) {
       html += `<tr><td colspan="6" style="padding:6px 10px;color:var(--red);">${q} ks — chyba</td></tr>`;
       return;
     }
-    const res = r.result;
-    const isMin = res.price_per_piece === minPrice;
-    const isCurrent = i === 0;
+    const res   = r.laser.result;
+    const bppc  = r.bendingPerPiece || 0;
+    const btot  = r.bendingTotal || 0;
+    const totalPpc   = res.price_per_piece + bppc;
+    const totalCelkom = res.price_total + btot;
+    const isMin = Math.abs(totalPpc - minPrice) < 0.001;
     const bg = isMin ? 'rgba(34,197,94,.08)' : (i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)');
     const profitPct = res.cost_per_piece > 0
-      ? ((res.price_per_piece - res.cost_per_piece) / res.cost_per_piece * 100).toFixed(0)
+      ? ((totalPpc - res.cost_per_piece) / res.cost_per_piece * 100).toFixed(0)
       : 0;
+
+    const bendNote = hasBending && bppc > 0
+      ? `<br><span style="font-size:.72rem;color:var(--text-muted);">laser ${fmtEur(res.price_per_piece)} + ohyb ${fmtEur(bppc)}</span>`
+      : '';
 
     html += `<tr style="background:${bg};border-bottom:1px solid var(--border);">
       <td style="padding:8px 10px;font-weight:700;">
         ${q} ks ${isMin ? '<span style="color:var(--green);font-size:.75rem;">★ najlepšia</span>' : ''}
       </td>
       <td style="padding:8px 10px;text-align:right;font-weight:700;color:${isMin?'var(--green)':'var(--accent)'};">
-        ${fmtEur(res.price_per_piece)}
+        ${fmtEur(totalPpc)}${bendNote}
       </td>
       <td style="padding:8px 10px;text-align:right;font-weight:600;">
-        ${fmtEur(res.price_total)}
+        ${fmtEur(totalCelkom)}
       </td>
       <td style="padding:8px 10px;text-align:right;color:var(--text-muted);">
         ${fmtEur(res.material_cost_sell)}
@@ -1554,7 +1599,7 @@ function showMultiQtyResults(qtys, results) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Ulož pre PDF export
-  window._multiQtyData = { qtys, results };
+  window._multiQtyData = { qtys, results, hasBending };
 }
 
 async function exportMultiQtyPdf() {
@@ -1563,14 +1608,17 @@ async function exportMultiQtyPdf() {
 
   const rows = qtys.map((q, i) => {
     const r = results[i];
-    if (!r || !r.ok) return null;
+    if (!r || !r.laser?.ok) return null;
+    const res  = r.laser.result;
+    const bppc = r.bendingPerPiece || 0;
+    const btot = r.bendingTotal || 0;
     return {
-      qty: q,
-      price_per_piece: r.result.price_per_piece,
-      price_total: r.result.price_total,
-      material_cost_sell: r.result.material_cost_sell,
-      machine_cost_per_piece: r.result.machine_cost_per_piece,
-      cost_per_piece: r.result.cost_per_piece,
+      qty:                    q,
+      price_per_piece:        res.price_per_piece + bppc,
+      price_total:            res.price_total + btot,
+      material_cost_sell:     res.material_cost_sell,
+      machine_cost_per_piece: res.machine_cost_per_piece,
+      cost_per_piece:         res.cost_per_piece,
     };
   }).filter(Boolean);
 
@@ -1581,6 +1629,7 @@ async function exportMultiQtyPdf() {
       body: JSON.stringify({
         rows,
         part_description: window._aiPartDesc || document.getElementById('qPartDesc')?.value || 'Výpalok',
+        drawing_number:   document.getElementById('qDrawingNumber')?.value || '',
         material: document.getElementById('pMaterial').value,
         thickness_mm: document.getElementById('pThickness').value,
         quote_number: document.getElementById('qNumber')?.value || '',
@@ -1613,6 +1662,7 @@ async function generateQuote() {
     bending: window._lastBending || null,
     rolling: window._lastRolling || null,
     part_description: document.getElementById('qPartDesc').value || window._aiPartDesc || 'Výpalok',
+    drawing_number:   document.getElementById('qDrawingNumber')?.value || '',
     quote_number: document.getElementById('qNumber').value || '',
     lang: document.getElementById('qLang').value || 'de',
     vat_pct: 0,
