@@ -1604,6 +1604,8 @@ def generate_multiqty_quote():
     thickness      = data.get("thickness_mm", "")
     quote_number   = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
     lang           = data.get("lang", "de")
+    markup_pct     = float(data.get("markup_pct", 0))
+    markup_factor  = 1 + markup_pct / 100
     company      = data.get("company", {})
 
     ORANGE=colors.HexColor('#f97316'); ORANGE_BG=colors.HexColor('#fff7ed')
@@ -1717,12 +1719,19 @@ def generate_multiqty_quote():
                    th("Gesamtbetrag" if de else "Celkom"),
                    th("Marge")])
 
-    min_price = min((float(r.get("price_per_piece", 0)) for r in rows), default=0)
+    min_price = min((float(r.get("price_per_piece", 0)) * markup_factor for r in rows), default=0)
     rows_tbl = [header_row]
 
+    # Prirážka note
+    if markup_pct > 0:
+        note_txt = f'Aufschlag {markup_pct:.0f}%' if lang == "de" else f'Prirážka {markup_pct:.0f}%'
+        story.append(Paragraph(note_txt, sty('markup_note', fontSize=8, fontName=_PDF_FONT,
+                                             textColor=colors.HexColor('#f59e0b'))))
+        story.append(Spacer(1, 2*mm))
+
     for i, row in enumerate(rows):
-        ppp   = float(row.get("price_per_piece", 0))
-        total = float(row.get("price_total", 0))
+        ppp   = float(row.get("price_per_piece", 0)) * markup_factor
+        total = float(row.get("price_total", 0)) * markup_factor
         cost  = float(row.get("cost_per_piece", 0))
         profit_pct = round((ppp - cost) / cost * 100) if cost > 0 else 0
         is_best    = abs(ppp - min_price) < 0.001
@@ -1731,7 +1740,7 @@ def generate_multiqty_quote():
         fc = GREEN if is_best else DARK
 
         dyn_cells = [
-            Paragraph(eur(float(row.get(key, 0))),
+            Paragraph(eur(float(row.get(key, 0)) * markup_factor),
                       sty(f'dc_{i}_{j}', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, alignment=TA_RIGHT))
             for j, (key, _, _) in enumerate(active_cols)
         ]
@@ -1801,6 +1810,8 @@ def generate_quote():
     drawing_number = data.get("drawing_number", "")
     quote_number   = data.get("quote_number", "") or f"CP-{str(int(_time.time()))[-6:]}"
     lang           = data.get("lang", "de")  # "de" alebo "sk"
+    markup_pct     = float(data.get("markup_pct", 0))
+    markup_factor  = 1 + markup_pct / 100
 
     # ── Texty podľa jazyka (de/sk) ────────────────────────────────────
     T = {
@@ -1985,7 +1996,7 @@ def generate_quote():
     laser_detail = (f'{r.get("cutting_time_min",0):.2f} min · '
                     f'{r.get("speed_m_min",0)} m/min · '
                     f'{r.get("gas","—")}')
-    machine_sell = float(r.get("machine_cost_per_piece", 0)) * (1 + float(params.get("margin_pct", 20)) / 100)
+    machine_sell = float(r.get("machine_cost_per_piece", 0)) * (1 + float(params.get("margin_pct", 20)) / 100) * markup_factor
     rows.append(make_row(nr, f'{laser_label}{dnum_str}',
         f'{part_desc} · {laser_detail}',
         qty, 'Stk', vat_pct,
@@ -1997,57 +2008,66 @@ def generate_quote():
     mat_label  = "Material" if lang == "de" else "Materiál"
     mat_detail = (f'{r.get("weight_kg_billed",0):.3f} kg · '
                   f'{r.get("mat_price_kg_sell",0):.2f} €/kg')
+    mat_sell = float(r.get("material_cost_sell", 0)) * markup_factor
     rows.append(make_row(nr, mat_label,
         f'{mat_str} · {mat_detail}',
         qty, 'Stk', vat_pct,
-        r.get("material_cost_sell", 0),
-        float(r.get("material_cost_sell", 0)) * qty))
+        mat_sell,
+        mat_sell * qty))
     nr += 1
 
-    # Plyn (ak nie je zahrnutý v strojovom čase — zobraz ako info)
+    # Plyn
     if float(r.get("gas_cost_per_piece", 0)) > 0.05:
         gas_label = "Schutzgas" if lang == "de" else "Rezný plyn"
+        gas_sell = float(r.get("gas_cost_per_piece", 0)) * markup_factor
         rows.append(make_row(nr, gas_label,
             f'{r.get("gas","—")}',
             qty, 'Stk', vat_pct,
-            r.get("gas_cost_per_piece", 0),
-            float(r.get("gas_cost_per_piece", 0)) * qty))
+            gas_sell,
+            gas_sell * qty))
         nr += 1
 
     # Ohýbanie
     if bending and bending.get("bending_applicable"):
+        b_sell = float(bending.get("bending_sell_per_piece", 0)) * markup_factor
         rows.append(make_row(nr, T["bending"],
             f'{bending.get("bend_count",0)} Biegungen',
             qty, 'Stk', vat_pct,
-            bending.get("bending_sell_per_piece", 0),
-            bending.get("bending_total", 0)))
+            b_sell, b_sell * qty))
         nr += 1
 
     # Valcovanie
     if rolling and rolling.get("rolling_applicable"):
+        r_sell = float(rolling.get("rolling_sell_per_piece", 0)) * markup_factor
         rows.append(make_row(nr, T.get("rolling", "Walzen / Valcovanie"),
             f'{rolling.get("roll_count",0)} Bögen · {rolling.get("unique_radii",0)}× Setup · {rolling.get("total_length_m",0)} m',
             qty, 'Stk', vat_pct,
-            rolling.get("rolling_sell_per_piece", 0),
-            rolling.get("rolling_total", 0)))
+            r_sell, r_sell * qty))
         nr += 1
 
     # Prášková farba
     if r.get("powder_coating"):
+        p_sell = float(r.get("powder_cost_per_piece", 0)) * markup_factor
         rows.append(make_row(nr, T["powder"],
             f'{r.get("powder_area_per_piece_m2",0):.3f} m² · {r.get("powder_oven_cycles",0)} Takt(e)',
             qty, 'Stk', vat_pct,
-            r.get("powder_cost_per_piece", 0),
-            float(r.get("powder_cost_per_piece", 0)) * qty))
+            p_sell, p_sell * qty))
         nr += 1
 
     # Vŕtanie
     if r.get("drill_cost", 0) > 0:
+        d_sell = float(r.get("drill_cost", 0)) * markup_factor
         rows.append(make_row(nr, T["drilling"], '',
             qty, 'Stk', vat_pct,
-            r.get("drill_cost", 0),
-            float(r.get("drill_cost", 0)) * qty))
+            d_sell, d_sell * qty))
         nr += 1
+
+    # Prirážka note v PDF
+    if markup_pct > 0:
+        markup_note = f'Aufschlag {markup_pct:.0f}% enthalten' if lang=="de" else f'Zákaznícka prirážka {markup_pct:.0f}% zahrnutá'
+        story.append(Spacer(1, 2*mm))
+        story.append(Paragraph(markup_note, sty('mn', fontSize=7, fontName=_PDF_FONT,
+                                                 textColor=colors.HexColor('#f59e0b'))))
 
     col_w = [10*mm, 65*mm, 18*mm, 10*mm, 13*mm, 28*mm, 28*mm]
     tbl = Table(rows, colWidths=col_w, repeatRows=1)

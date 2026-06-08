@@ -584,6 +584,13 @@
                 style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
             </div>
             <div>
+              <label style="font-size:.75rem;color:var(--text-muted);display:block;">Zákaznícka prirážka (%)</label>
+              <input type="number" id="qMarkup" value="0" min="0" max="500" step="1"
+                style="background:var(--surface);border:1px solid rgba(245,158,11,.4);border-radius:6px;color:var(--yellow);padding:5px 8px;font-size:.88rem;width:100%;outline:none;font-weight:700;"
+                title="Prirážka na vrch kalkulovanej ceny. 0 = bez prirážky, 50 = cena × 1.5">
+              <div style="font-size:.72rem;color:var(--text-muted);margin-top:2px;" id="qMarkupPreview"></div>
+            </div>
+            <div>
               <label style="font-size:.75rem;color:var(--text-muted);display:block;">Zákazník</label>
               <input type="text" id="qCustomer" placeholder="napr. Kuhler SK s.r.o."
                 style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.85rem;width:100%;outline:none;">
@@ -964,6 +971,17 @@ let currentTab = 'dxf';
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pPowderCoating').addEventListener('change', function() {
     document.getElementById('powderOptions').style.display = this.checked ? 'block' : 'none';
+  });
+  document.getElementById('qMarkup').addEventListener('input', function() {
+    const pct = parseFloat(this.value) || 0;
+    const prev = document.getElementById('qMarkupPreview');
+    if (pct > 0) {
+      prev.textContent = `× ${(1 + pct/100).toFixed(2)} → napr. 10,00 € → ${(10*(1+pct/100)).toFixed(2)} €`;
+      prev.style.color = 'var(--yellow)';
+    } else {
+      prev.textContent = 'bez prirážky';
+      prev.style.color = 'var(--text-muted)';
+    }
   });
   document.getElementById('pWelding').addEventListener('change', function() {
     document.getElementById('weldingOptions').style.display = this.checked ? 'block' : 'none';
@@ -1635,6 +1653,7 @@ async function exportMultiQtyPdf() {
         rows,
         part_description: window._aiPartDesc || document.getElementById('qPartDesc')?.value || 'Výpalok',
         drawing_number:   document.getElementById('qDrawingNumber')?.value || '',
+        markup_pct:       parseFloat(document.getElementById('qMarkup')?.value) || 0,
         material: document.getElementById('pMaterial').value,
         thickness_mm: document.getElementById('pThickness').value,
         quote_number: document.getElementById('qNumber')?.value || '',
@@ -1668,7 +1687,8 @@ async function generateQuote() {
     rolling: window._lastRolling || null,
     part_description: document.getElementById('qPartDesc').value || window._aiPartDesc || 'Výpalok',
     drawing_number:   document.getElementById('qDrawingNumber')?.value || '',
-    quote_number: document.getElementById('qNumber').value || '',
+    quote_number:     document.getElementById('qNumber').value || '',
+    markup_pct:       parseFloat(document.getElementById('qMarkup')?.value) || 0,
     lang: document.getElementById('qLang').value || 'de',
     vat_pct: 0,
     customer_reference: document.getElementById('qRef').value || '',
