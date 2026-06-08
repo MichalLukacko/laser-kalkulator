@@ -1609,16 +1609,21 @@ async function exportMultiQtyPdf() {
   const rows = qtys.map((q, i) => {
     const r = results[i];
     if (!r || !r.laser?.ok) return null;
-    const res  = r.laser.result;
-    const bppc = r.bendingPerPiece || 0;
-    const btot = r.bendingTotal || 0;
+    const res   = r.laser.result;
+    const bppc  = r.bendingPerPiece || 0;
+    const btot  = r.bendingTotal || 0;
+    const margin_pct = parseFloat(document.getElementById('pMargin').value) || 20;
+    const machine_sell = res.machine_cost_per_piece * (1 + margin_pct / 100);
     return {
-      qty:                    q,
-      price_per_piece:        res.price_per_piece + bppc,
-      price_total:            res.price_total + btot,
-      material_cost_sell:     res.material_cost_sell,
-      machine_cost_per_piece: res.machine_cost_per_piece,
-      cost_per_piece:         res.cost_per_piece,
+      qty:             q,
+      laser_per_piece: machine_sell,
+      material_per_piece: res.material_cost_sell,
+      gas_per_piece:   res.gas_cost_per_piece || 0,
+      bending_per_piece: bppc,
+      powder_per_piece: res.powder_cost_per_piece || 0,
+      price_per_piece: res.price_per_piece + bppc,
+      price_total:     res.price_total + btot,
+      cost_per_piece:  res.cost_per_piece,
     };
   }).filter(Boolean);
 

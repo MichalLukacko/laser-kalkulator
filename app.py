@@ -1674,65 +1674,90 @@ def generate_multiqty_quote():
     story.append(Paragraph(f'{part_desc}{dnum} · {material.upper()} {thickness}mm', s_small))
     story.append(Spacer(1,4*mm))
 
-    # Tabuľka cenových hladín
-    col_w = [25*mm, 35*mm, 35*mm, 30*mm, 30*mm, 17*mm]
-    menge_lbl = "Menge" if lang == "de" else "Množstvo"
-    rows_tbl = [[
-        Paragraph(menge_lbl, sty('th1', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white)),
-        Paragraph("Einheitspreis" if lang=="de" else "Cena / ks",
-                  sty('th2', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
-        Paragraph("Gesamtbetrag" if lang=="de" else "Celkom",
-                  sty('th3', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
-        Paragraph("Material / Stk" if lang=="de" else "Materiál / ks",
-                  sty('th4', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
-        Paragraph("Maschine / Stk" if lang=="de" else "Stroj / ks",
-                  sty('th5', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
-        Paragraph("Marge" if lang=="de" else "Zisk",
-                  sty('th6', fontSize=8, fontName=_PDF_FONT_BOLD, textColor=colors.white, alignment=TA_RIGHT)),
-    ]]
+    # ── Dynamické stĺpce — zobraziť len aktívne operácie ─────────────
+    def has_col(key):
+        return any(float(r.get(key, 0)) > 0.001 for r in rows)
 
-    min_price = min((float(r.get("price_per_piece",0)) for r in rows), default=0)
+    de = lang == "de"
+    # Definuj stĺpce: (key, label_de, label_sk, šírka mm)
+    all_cols = [
+        ("laser_per_piece",   "Laser / Stk",   "Laser / ks",   22),
+        ("material_per_piece","Material / Stk", "Materiál / ks",22),
+        ("bending_per_piece", "Biegen / Stk",  "Ohyb / ks",    20),
+        ("powder_per_piece",  "Lackierung / Stk","Farba / ks",  20),
+        ("gas_per_piece",     "Gas / Stk",      "Plyn / ks",    18),
+    ]
+    active_cols = [(key, lde if de else lsk, w) for key, lde, lsk, w in all_cols if has_col(key)]
+
+    # Fixné stĺpce: Menge, Einheitspreis, Gesamt, [dynamické...], Marge
+    fixed_left_w  = 22  # Menge
+    fixed_right_w = [28, 30, 16]  # Einheitspreis, Gesamt, Marge
+
+    dyn_total_w = sum(w for _, _, w in active_cols)
+    # Celková šírka A4 = 172mm (18+18 okraje)
+    available = 172 - fixed_left_w - sum(fixed_right_w) - dyn_total_w
+    # Priraď zvyšok stĺpcom Einheitspreis a Gesamt
+    fixed_right_w[0] += max(0, available // 2)
+    fixed_right_w[1] += max(0, available - available // 2)
+
+    col_w_final = ([fixed_left_w*mm] +
+                   [w*mm for _, _, w in active_cols] +
+                   [fixed_right_w[0]*mm, fixed_right_w[1]*mm, fixed_right_w[2]*mm])
+
+    def th(txt):
+        return Paragraph(txt, sty(f'th_{txt[:4]}', fontSize=7, fontName=_PDF_FONT_BOLD,
+                                  textColor=colors.white, alignment=TA_RIGHT))
+    def thL(txt):
+        return Paragraph(txt, sty(f'thL_{txt[:4]}', fontSize=7, fontName=_PDF_FONT_BOLD,
+                                  textColor=colors.white))
+
+    header_row = ([thL("Menge" if de else "Množstvo")] +
+                  [th(lbl) for _, lbl, _ in active_cols] +
+                  [th("Einheitspreis" if de else "Cena / ks"),
+                   th("Gesamtbetrag" if de else "Celkom"),
+                   th("Marge")])
+
+    min_price = min((float(r.get("price_per_piece", 0)) for r in rows), default=0)
+    rows_tbl = [header_row]
+
     for i, row in enumerate(rows):
         ppp   = float(row.get("price_per_piece", 0))
         total = float(row.get("price_total", 0))
-        mat   = float(row.get("material_cost_sell", 0))
-        mach  = float(row.get("machine_cost_per_piece", 0))
         cost  = float(row.get("cost_per_piece", 0))
         profit_pct = round((ppp - cost) / cost * 100) if cost > 0 else 0
-        is_best = abs(ppp - min_price) < 0.001
-        bg = colors.HexColor('#f0fdf4') if is_best else (LIGHT if i%2==0 else colors.white)
-        best_star = ' ★' if is_best else ''
+        is_best    = abs(ppp - min_price) < 0.001
+        best_star  = ' ★' if is_best else ''
+        fn = _PDF_FONT_BOLD if is_best else _PDF_FONT
+        fc = GREEN if is_best else DARK
 
-        rows_tbl.append([
-            Paragraph(f'{row.get("qty","")} Stk{best_star}',
-                      sty(f'r1_{i}', fontSize=9, fontName=_PDF_FONT_BOLD if is_best else _PDF_FONT,
-                          textColor=GREEN if is_best else DARK)),
-            Paragraph(eur(ppp),
-                      sty(f'r2_{i}', fontSize=9, fontName=_PDF_FONT_BOLD if is_best else _PDF_FONT,
-                          textColor=GREEN if is_best else DARK, alignment=TA_RIGHT)),
-            Paragraph(eur(total),
-                      sty(f'r3_{i}', fontSize=9, fontName=_PDF_FONT, textColor=DARK, alignment=TA_RIGHT)),
-            Paragraph(eur(mat),
-                      sty(f'r4_{i}', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, alignment=TA_RIGHT)),
-            Paragraph(eur(mach),
-                      sty(f'r5_{i}', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, alignment=TA_RIGHT)),
-            Paragraph(f'{profit_pct}%',
-                      sty(f'r6_{i}', fontSize=8, fontName=_PDF_FONT, textColor=GREEN, alignment=TA_RIGHT)),
-        ])
+        dyn_cells = [
+            Paragraph(eur(float(row.get(key, 0))),
+                      sty(f'dc_{i}_{j}', fontSize=8, fontName=_PDF_FONT, textColor=MUTED, alignment=TA_RIGHT))
+            for j, (key, _, _) in enumerate(active_cols)
+        ]
 
-    tbl = Table(rows_tbl, colWidths=col_w, repeatRows=1)
+        rows_tbl.append(
+            [Paragraph(f'{row.get("qty","")} Stk{best_star}',
+                       sty(f'r1_{i}', fontSize=9, fontName=fn, textColor=fc))] +
+            dyn_cells +
+            [Paragraph(eur(ppp),   sty(f'r2_{i}', fontSize=9, fontName=fn, textColor=fc, alignment=TA_RIGHT)),
+             Paragraph(eur(total), sty(f'r3_{i}', fontSize=9, fontName=_PDF_FONT, textColor=DARK, alignment=TA_RIGHT)),
+             Paragraph(f'{profit_pct}%', sty(f'r4_{i}', fontSize=8, fontName=_PDF_FONT, textColor=GREEN, alignment=TA_RIGHT))]
+        )
+
+    tbl = Table(rows_tbl, colWidths=col_w_final, repeatRows=1)
     tbl.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0), ORANGE),
-        ('GRID',(0,0),(-1,-1),0.3,BORDER),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
-        ('LEFTPADDING',(0,0),(-1,-1),5),
+        ('BACKGROUND', (0,0), (-1,0), ORANGE),
+        ('GRID',       (0,0), (-1,-1), 0.3, BORDER),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, LIGHT]),
+        ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING',   (0,0), (-1,-1), 5),
     ]))
-    # Zelené pozadie pre najlepšiu cenu
     for i, row in enumerate(rows):
-        ppp = float(row.get("price_per_piece",0))
-        if abs(ppp - min_price) < 0.001:
-            tbl.setStyle(TableStyle([('BACKGROUND',(0,i+1),(-1,i+1), colors.HexColor('#f0fdf4'))]))
+        if abs(float(row.get("price_per_piece", 0)) - min_price) < 0.001:
+            tbl.setStyle(TableStyle([('BACKGROUND', (0,i+1), (-1,i+1), colors.HexColor('#f0fdf4'))]))
 
     story.append(tbl)
     story.append(Spacer(1,6*mm))
@@ -1952,15 +1977,42 @@ def generate_quote():
         ]
 
     nr = 1
-    mat_str = f'{params.get("material","").upper()} {params.get("thickness_mm","")}mm'
+    mat_str  = f'{params.get("material","").upper()} {params.get("thickness_mm","")}mm'
     dnum_str = f' · {drawing_number}' if drawing_number else ''
 
-    # Rezanie + materiál (ako 1 položka — predajná cena/ks)
-    rows.append(make_row(nr, f'{part_desc}{dnum_str}', mat_str,
+    # ── Laserové rezanie ──
+    laser_label = "Laserschneiden" if lang == "de" else "Laserové rezanie"
+    laser_detail = (f'{r.get("cutting_time_min",0):.2f} min · '
+                    f'{r.get("speed_m_min",0)} m/min · '
+                    f'{r.get("gas","—")}')
+    machine_sell = float(r.get("machine_cost_per_piece", 0)) * (1 + float(params.get("margin_pct", 20)) / 100)
+    rows.append(make_row(nr, f'{laser_label}{dnum_str}',
+        f'{part_desc} · {laser_detail}',
         qty, 'Stk', vat_pct,
-        r.get("price_per_piece", 0),
-        laser_total))
+        machine_sell,
+        machine_sell * qty))
     nr += 1
+
+    # ── Materiál ──
+    mat_label  = "Material" if lang == "de" else "Materiál"
+    mat_detail = (f'{r.get("weight_kg_billed",0):.3f} kg · '
+                  f'{r.get("mat_price_kg_sell",0):.2f} €/kg')
+    rows.append(make_row(nr, mat_label,
+        f'{mat_str} · {mat_detail}',
+        qty, 'Stk', vat_pct,
+        r.get("material_cost_sell", 0),
+        float(r.get("material_cost_sell", 0)) * qty))
+    nr += 1
+
+    # Plyn (ak nie je zahrnutý v strojovom čase — zobraz ako info)
+    if float(r.get("gas_cost_per_piece", 0)) > 0.05:
+        gas_label = "Schutzgas" if lang == "de" else "Rezný plyn"
+        rows.append(make_row(nr, gas_label,
+            f'{r.get("gas","—")}',
+            qty, 'Stk', vat_pct,
+            r.get("gas_cost_per_piece", 0),
+            float(r.get("gas_cost_per_piece", 0)) * qty))
+        nr += 1
 
     # Ohýbanie
     if bending and bending.get("bending_applicable"):
